@@ -1,0 +1,1 @@
+DROP TABLE hyperotaserver.package CASCADE;

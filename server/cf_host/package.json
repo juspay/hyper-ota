@@ -1,0 +1,17 @@
+{
+  "name": "cf_host",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.782.0",
+    "express": "^5.1.0",
+    "mime-types": "^3.0.1"
+  }
+}

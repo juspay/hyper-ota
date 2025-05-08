@@ -1,0 +1,6 @@
+/target
+/**/node_modules
+/**/.spago
+.DS_Store
+.env
+.vscode
