@@ -1,0 +1,9 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "react-native-hyper-ota": ["../hyper-ota/react-plugin/src/index.tsx"]
+    }
+  }
+}
