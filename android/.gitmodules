@@ -1,0 +1,3 @@
+[submodule "mavenRepo"]
+    path = mavenRepo
+    url = ssh://git@ssh.bitbucket.juspay.net/picaf/hyper-sdk-local-maven.git

@@ -1,0 +1,40 @@
+
+buildscript {
+    ext {
+        kotlin_version = '1.8.22'
+    }
+    repositories {
+        mavenCentral()
+        google()
+
+        maven { url "https://maven.juspay.in/hyper-sdk/" }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'com.diffplug.spotless:spotless-plugin-gradle:6.22.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // Used by Android-SpinKit and VBA
+        maven { url "https://maven.juspay.in/hyper-sdk/" }
+        maven { url "https://maven.getsimpl.com" }
+        maven { url 'https://jitpack.io' }
+    }
+}
+
+ext {
+    apply from: 'versions.gradle'
+//    apply from: 'configs.gradle'
+}
+
+apply plugin: "com.diffplug.spotless"
+apply from: 'spotless.gradle'
+apply plugin: BasePlugin
+tasks.getByName(BasePlugin.CLEAN_TASK_NAME).doLast {
+    delete rootProject.buildDir
+}

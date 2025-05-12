@@ -1,0 +1,26 @@
+spotless {
+    java {
+        target '*/src/main/java/**/*.java', '*/src/main/test/**/*.java'
+        importOrder(
+                '\\#android|\\#androidx|\\#com|\\#junit|\\#net|\\#org|\\#java|\\#javax|\\#',
+                'android',
+                'androidx',
+                'com',
+                'junit',
+                'net',
+                'org',
+                'java',
+                'javax',
+                'in.juspay',
+                ''
+        )
+        indentWithSpaces(4)
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    kotlin {
+        target("**/*.kt", "**/*.kts")
+        ktlint("1.2.1").setEditorConfigPath("$projectDir/.editorconfig")
+    }
+}

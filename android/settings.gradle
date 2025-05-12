@@ -1,0 +1,4 @@
+//include ':app'
+
+include ':hyper-ota'
+include ':hyper-ota-react'

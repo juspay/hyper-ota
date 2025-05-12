@@ -1,0 +1,11 @@
+ext {
+    Properties versionProp = new Properties()
+    versionProp.load(project.rootProject.file('version.properties').newDataInputStream())
+
+    hyperVersion = versionProp.getProperty('hyperVersion')
+
+    def versionArr = hyperVersion.split("-")
+    useRc = versionArr.length > 1
+    hyper_sdk_version = versionArr[0]
+    hyper_sdk_build_version = versionArr.length > 1 ? versionArr[1] : ""
+}
