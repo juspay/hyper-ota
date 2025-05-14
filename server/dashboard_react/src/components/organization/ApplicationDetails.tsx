@@ -345,6 +345,18 @@ export default function ApplicationDetails({
           <Eye size={18} className="mr-2" />
           View Release Details
         </button>
+        {/* <button
+          onClick={() => {
+            // Navigate to analytics, let the Analytics component handle release selection
+            navigate(
+              `/dashboard/analytics/${organization.name}/${application.application}`
+            );
+          }}
+          className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg shadow-green-500/20 flex items-center"
+        >
+          <BarChart3 size={18} className="mr-2" />
+          View Analytics
+        </button> */}
         <button
           onClick={handleRelease}
           className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-500/20 flex items-center"

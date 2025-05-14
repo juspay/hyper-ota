@@ -1,0 +1,7 @@
+target/
+.env
+Cargo.lock
+# Ignore build artifacts
+# Ignore the target directory where Rust builds its artifacts
+# Ignore the .env file for environment variables
+# Ignore the Cargo.lock file to allow for flexible dependency versions

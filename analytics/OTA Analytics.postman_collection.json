@@ -1,0 +1,354 @@
+{
+	"info": {
+		"_postman_id": "adedaa50-605b-47fc-8295-506a03a50934",
+		"name": "OTA Analytics",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "41569651"
+	},
+	"item": [
+		{
+			"name": "health",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "ingest event",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"tenant_id\": \"zepto\",\n    \"org_id\": \"zepto\",\n    \"app_id\": \"zepto\",\n    \"device_id\": \"{{$randomUUID}}\",\n    \"session_id\": \"{{$randomUUID}}\",\n    \"event_type\": \"DOWNLOAD_COMPLETED\",\n    \"release_id\": \"release_6677\",\n    \"current_js_version\": \"1.0.0\",\n    \"target_js_version\": \"1.0.4\",\n    \"rollout_percentage\": \"30\",\n    \"os_version\": \"16.1\",\n    \"app_version\": \"7.5\",\n    \"device_type\": \"iOS\",\n    \"network_type\": \"wifi\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "0.0.0.0:6400/events",
+					"host": [
+						"0",
+						"0",
+						"0",
+						"0"
+					],
+					"port": "6400",
+					"path": [
+						"events"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Performance Metrices - Basic",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "0.0.0.0:6400/analytics/performance?tenant_id=zepto&org_id=zepto&app_id=zepto&release_id=release_6677",
+					"host": [
+						"0",
+						"0",
+						"0",
+						"0"
+					],
+					"port": "6400",
+					"path": [
+						"analytics",
+						"performance"
+					],
+					"query": [
+						{
+							"key": "tenant_id",
+							"value": "zepto"
+						},
+						{
+							"key": "org_id",
+							"value": "zepto"
+						},
+						{
+							"key": "app_id",
+							"value": "zepto"
+						},
+						{
+							"key": "release_id",
+							"value": "release_6677"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Adoption Metrices - Basic",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "0.0.0.0:6400/analytics/adoption?tenant_id=zepto&org_id=zepto&app_id=zepto&release_id=release_6677&date=1749107984823&interval=HOUR&start_date=1748863867772&end_date=1749107984823",
+					"host": [
+						"0",
+						"0",
+						"0",
+						"0"
+					],
+					"port": "6400",
+					"path": [
+						"analytics",
+						"adoption"
+					],
+					"query": [
+						{
+							"key": "tenant_id",
+							"value": "zepto"
+						},
+						{
+							"key": "org_id",
+							"value": "zepto"
+						},
+						{
+							"key": "app_id",
+							"value": "zepto"
+						},
+						{
+							"key": "release_id",
+							"value": "release_6677"
+						},
+						{
+							"key": "date",
+							"value": "1749107984823",
+							"description": "Date for which you want the hourly breakdown in case of interval=\"HOUR\""
+						},
+						{
+							"key": "interval",
+							"value": "HOUR"
+						},
+						{
+							"key": "start_date",
+							"value": "1748863867772",
+							"description": "Start date in case of interval=\"DAY\""
+						},
+						{
+							"key": "end_date",
+							"value": "1749107984823",
+							"description": "End date in case of interval=\"DAY\""
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "Adoption Metrices - Daywise",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "0.0.0.0:6400/analytics/adoption?tenant_id=zepto&org_id=zepto&app_id=zepto&release_id=release_6677&date=1749107984823&interval=DAY&start_date=1748863867772&end_date=1749107984823",
+							"host": [
+								"0",
+								"0",
+								"0",
+								"0"
+							],
+							"port": "6400",
+							"path": [
+								"analytics",
+								"adoption"
+							],
+							"query": [
+								{
+									"key": "tenant_id",
+									"value": "zepto"
+								},
+								{
+									"key": "org_id",
+									"value": "zepto"
+								},
+								{
+									"key": "app_id",
+									"value": "zepto"
+								},
+								{
+									"key": "release_id",
+									"value": "release_6677"
+								},
+								{
+									"key": "date",
+									"value": "1749107984823",
+									"description": "Date for which you want the hourly breakdown in case of interval=\"HOUR\""
+								},
+								{
+									"key": "interval",
+									"value": "DAY"
+								},
+								{
+									"key": "start_date",
+									"value": "1748863867772",
+									"description": "Start date in case of interval=\"DAY\""
+								},
+								{
+									"key": "end_date",
+									"value": "1749107984823",
+									"description": "End date in case of interval=\"DAY\""
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "content-type",
+							"value": "application/json"
+						},
+						{
+							"key": "vary",
+							"value": "origin, access-control-request-method, access-control-request-headers"
+						},
+						{
+							"key": "access-control-allow-origin",
+							"value": "*"
+						},
+						{
+							"key": "access-control-expose-headers",
+							"value": "*"
+						},
+						{
+							"key": "content-length",
+							"value": "1073"
+						},
+						{
+							"key": "date",
+							"value": "Thu, 05 Jun 2025 08:11:47 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"data\": {\n        \"tenant_id\": \"zepto\",\n        \"org_id\": \"zepto\",\n        \"app_id\": \"zepto\",\n        \"release_id\": \"release_6677\",\n        \"time_breakdown\": [\n            {\n                \"time_slot\": \"2025-06-02T00:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-03T00:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-04T00:00:00Z\",\n                \"download_success\": 27,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T00:00:00Z\",\n                \"download_success\": 1,\n                \"download_failures\": 0,\n                \"apply_success\": 2,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 4,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 2,\n                \"update_checks\": 3,\n                \"update_available\": 4\n            }\n        ]\n    },\n    \"timestamp\": \"2025-06-05T08:11:47.917724Z\"\n}"
+				},
+				{
+					"name": "Adoption Metrices - HOUR",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "0.0.0.0:6400/analytics/adoption?tenant_id=zepto&org_id=zepto&app_id=zepto&release_id=release_6677&date=1749107984823&interval=HOUR&start_date=1748863867772&end_date=1749107984823",
+							"host": [
+								"0",
+								"0",
+								"0",
+								"0"
+							],
+							"port": "6400",
+							"path": [
+								"analytics",
+								"adoption"
+							],
+							"query": [
+								{
+									"key": "tenant_id",
+									"value": "zepto"
+								},
+								{
+									"key": "org_id",
+									"value": "zepto"
+								},
+								{
+									"key": "app_id",
+									"value": "zepto"
+								},
+								{
+									"key": "release_id",
+									"value": "release_6677"
+								},
+								{
+									"key": "date",
+									"value": "1749107984823",
+									"description": "Date for which you want the hourly breakdown in case of interval=\"HOUR\""
+								},
+								{
+									"key": "interval",
+									"value": "HOUR"
+								},
+								{
+									"key": "start_date",
+									"value": "1748863867772",
+									"description": "Start date in case of interval=\"DAY\""
+								},
+								{
+									"key": "end_date",
+									"value": "1749107984823",
+									"description": "End date in case of interval=\"DAY\""
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "content-type",
+							"value": "application/json"
+						},
+						{
+							"key": "vary",
+							"value": "origin, access-control-request-method, access-control-request-headers"
+						},
+						{
+							"key": "access-control-allow-origin",
+							"value": "*"
+						},
+						{
+							"key": "access-control-expose-headers",
+							"value": "*"
+						},
+						{
+							"key": "content-length",
+							"value": "5595"
+						},
+						{
+							"key": "date",
+							"value": "Thu, 05 Jun 2025 14:06:10 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"data\": {\n        \"tenant_id\": \"zepto\",\n        \"org_id\": \"zepto\",\n        \"app_id\": \"zepto\",\n        \"release_id\": \"release_6677\",\n        \"time_breakdown\": [\n            {\n                \"time_slot\": \"2025-06-05T00:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T01:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T02:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T03:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T04:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T05:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T06:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T07:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T08:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T09:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T10:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T11:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T12:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T13:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T14:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T15:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T16:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T17:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T18:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T19:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T20:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T21:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T22:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            },\n            {\n                \"time_slot\": \"2025-06-05T23:00:00Z\",\n                \"download_success\": 0,\n                \"download_failures\": 0,\n                \"apply_success\": 0,\n                \"apply_failures\": 0,\n                \"rollbacks_initiated\": 0,\n                \"rollbacks_completed\": 0,\n                \"rollback_failures\": 0,\n                \"update_checks\": 0,\n                \"update_available\": 0\n            }\n        ]\n    },\n    \"timestamp\": \"2025-06-05T14:06:10.975822328Z\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Version Distribution",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		}
+	]
+}

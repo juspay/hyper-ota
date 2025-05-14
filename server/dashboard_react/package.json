@@ -15,12 +15,15 @@
     "@reduxjs/toolkit": "^2.7.0",
     "@uiw/react-json-view": "^2.0.0-alpha.30",
     "axios": "^1.8.4",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.7.5",
     "lucide-react": "^0.488.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.5.0",
+    "react-tailwindcss-datepicker": "^2.0.0",
+    "recharts": "^2.15.3",
     "tailwind-merge": "^3.2.0"
   },
   "devDependencies": {
