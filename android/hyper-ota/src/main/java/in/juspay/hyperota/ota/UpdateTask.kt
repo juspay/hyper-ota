@@ -45,6 +45,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.LockSupport
 
@@ -56,7 +57,7 @@ internal class UpdateTask(
     private val fileProviderService: FileProviderService,
     private var localReleaseConfig: ReleaseConfig?,
     private val fileLock: Any,
-    tracker: TrackerCallback?,
+    tracker: TrackerCallback,
     private val netUtils: NetUtils,
     rcHeaders: Map<String, String>? = null,
     private val lazyDownloadCallback: LazyDownloadCallback?
@@ -73,7 +74,10 @@ internal class UpdateTask(
     private var releaseConfigTimeout =
         (localReleaseConfig?.config ?: DEFAULT_CONFIG).releaseConfigTimeout
     private var initTime = System.currentTimeMillis()
-    private var updateTimedOut = false
+    private var updateTimedOut = AtomicBoolean(false)
+    private var packageUpdate: Future<Update.Package>? = null
+    private var resourceUpdate: ResourceUpdateTask? = null
+    private var resourceDownloadStatus = ResourceUpdateStatus.RESOURCES_DOWNLOADING
 
     @Volatile
     private var packageTimeout =
@@ -95,7 +99,7 @@ internal class UpdateTask(
     private var resourceSaveFuture: Future<Unit>? = null
 
     init {
-        tracker?.let { trackers.add(it) }
+        tracker.let { trackers.add(it) }
         for ((key, value) in rcHeaders ?: emptyMap()) {
             defaultHeaders[key] = value
         }
@@ -161,9 +165,9 @@ internal class UpdateTask(
         updateTimeouts(fetched)
         onComplete(Stage.FETCHING_RC)
         val pupdateStart = System.currentTimeMillis()
-        val pupdate = doAsync { downloadPackageUpdate(fetched.pkg) }
-        val rupdate = ResourceUpdateTask(localReleaseConfig?.resources, fetched.resources)
-        rupdate.start()
+        packageUpdate = doAsync { downloadPackageUpdate(fetched.pkg) }
+        resourceUpdate = ResourceUpdateTask(localReleaseConfig?.resources, fetched.resources)
+        resourceUpdate?.start()
         var updatedConfig: ReleaseConfig.Config? = null
         if (fetched.version != localReleaseConfig?.version) {
             if (writeRCVersion(fetched.version)) {
@@ -185,23 +189,27 @@ internal class UpdateTask(
                 Log.d(TAG, "Config updated.")
             }
         }
-        val presult = pupdate.get()
+        val presult = packageUpdate?.get()
+        resourceUpdate?.awaitResourceUpdates()
         onComplete(Stage.DOWNLOADING_UPDATES)
         var didPackageUpdate = false
         var updatedPackage: ReleaseConfig.PackageManifest? = null
-        if (!updateTimedOut) {
+        if (!updateTimedOut.get()) {
             Log.d(TAG, "Installing package as updateTimedout is false")
             val packageInstallFuture = doAsync {
-                installPackageUpdate(presult, fetched.pkg, pupdateStart)
+                presult?.let {
+                    installPackageUpdate(it, fetched.pkg, pupdateStart)
+                }
             }
             didPackageUpdate = packageInstallFuture.get()
             updatedPackage = if (didPackageUpdate) fetched.pkg else null
         }
-        val resources = rupdate.installDownloadedResources()
-        rupdate.completeResourceDownload()
+        val resources = resourceUpdate?.installDownloadedResources()
+        resourceUpdate?.completeResourceDownload()
+        // Fallback gracefully
         onComplete(Stage.INSTALLING)
         setCurrentResult(fetched.version, updatedConfig, updatedPackage, resources)
-        val shouldDownloadCurLazySplits = updateTimedOut || !didPackageUpdate
+        val shouldDownloadCurLazySplits = updateTimedOut.get() || !didPackageUpdate
 
         if (shouldDownloadCurLazySplits) {
             Log.d(TAG, "Starting lazy splits download of current pkg version ${localReleaseConfig?.pkg?.version}")
@@ -217,36 +225,37 @@ internal class UpdateTask(
         onFinish?.let { it(currentResult, state) }
     }
 
-    fun await(tracker: TrackerCallback?): UpdateResult {
-        tracker?.let {
+    // returns if the wait is success
+    private fun waitForStage(stage: Stage, timeout: Long): Boolean {
+        try {
+            awaitCompletion(stage, timeout)
+        } catch (e: TimeoutException) {
+            if (currentStage.ordinal < stage.ordinal + 1) {
+                updateTimedOut.set(true)
+                Log.d(TAG, "Timeout waiting for ${stage.name}")
+                return false
+            }
+        }
+        return true
+    }
+
+    fun await(tracker: TrackerCallback): UpdateResult {
+        tracker.let {
             if (!trackers.contains(it)) {
                 trackers.add(it)
             }
         }
-        try {
-            awaitCompletion(Stage.FETCHING_RC, releaseConfigTimeout)
-        } catch (e: TimeoutException) {
-            updateTimedOut = true
-            Log.d(TAG, "Timeout waiting for release config fetch.")
+        if (!waitForStage(Stage.FETCHING_RC, releaseConfigTimeout)) {
             return UpdateResult.ReleaseConfigFetchTimeout
         }
-        try {
-            awaitCompletion(Stage.DOWNLOADING_UPDATES, packageTimeout)
-        } catch (e: TimeoutException) {
-            updateTimedOut = true
-            Log.d(TAG, "Timeout waiting for package update.")
+        if (!waitForStage(Stage.DOWNLOADING_UPDATES, packageTimeout)) {
             val releaseConfig = when (val currentResult = currentResult) {
                 is UpdateResult.Ok -> currentResult.releaseConfig
                 else -> null
             }
             return UpdateResult.PackageUpdateTimeout(releaseConfig)
         }
-        try {
-            awaitCompletion(Stage.INSTALLING, 10000)
-        } catch (e: TimeoutException) {
-            updateTimedOut = true
-            Log.e(TAG, "TIMEOUT WAITING for INSTALLING!")
-            // Un-reachable code.
+        if (!waitForStage(Stage.INSTALLING, 10000)) {
             return UpdateResult.Error.Unknown
         }
         return currentResult
@@ -271,7 +280,22 @@ internal class UpdateTask(
             }
             wt.complete()
         }
-        wt.get(timeoutMillis, TimeUnit.MILLISECONDS)
+
+        try {
+            wt.get(timeoutMillis, TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            if (stage == Stage.DOWNLOADING_UPDATES) {
+                // stop resource wait
+                resourceDownloadStatus = ResourceUpdateStatus.RESOURCES_TIMEDOUT
+                val resources = resourceUpdate?.installDownloadedResources()
+                setCurrentResult(resources = resources)
+                if (packageUpdate?.isDone != true) {
+                    throw e
+                }
+            } else {
+                throw e
+            }
+        }
         logTimeTaken(startTime, "awaitCompletion: ${stage.name}")
     }
 
@@ -488,7 +512,7 @@ internal class UpdateTask(
             writePackageManifest(pkg)
         }
 
-        if (!pkgLoaded && (updateResult is Update.Package.Finished || updateResult is Update.Package.NA)) { // If no lazy splits are present even then the pkg should be saved. Update.Package.NA
+        if (!pkgLoaded && (updateResult is Update.Package.Finished || updateResult is Update.Package.NA)) { // If no lazy splits are present, even then the pkg should be saved. Update.Package.NA
             saveDownloadedPackages(updateResult, pkg)
         }
     }
@@ -501,30 +525,6 @@ internal class UpdateTask(
 
     private fun writePackageManifest(packageManifest: Package): Boolean =
         writeManifest(PACKAGE_MANIFEST_FILE_NAME, packageManifest.toJSON().toString())
-
-    private fun awaitUpdates(
-        packageUpdateFuture: Future<Update.Package>,
-        resourceUpdateTask: ResourceUpdateTask,
-        timeoutMillis: Long
-    ) {
-        val startTime = System.currentTimeMillis()
-        val deadLine = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
-        var timedOut = true
-        val microsecond = TimeUnit.MICROSECONDS.toNanos(1)
-        Log.d(TAG, "awaitDownloads: Starting wait.")
-        while (System.nanoTime() < deadLine) {
-            if (packageUpdateFuture.isDone && resourceUpdateTask.isDone) {
-                timedOut = false
-                break
-            }
-            LockSupport.parkNanos(microsecond)
-        }
-        if (timedOut) {
-            // Log saying that the process timedout - Pending on timeout logic
-            Log.d(TAG, "awaitDownloads: Timeout.")
-        }
-        logTimeTaken(startTime, "awaitDownloads: Wait ended.")
-    }
 
     private fun downloadPackageUpdate(fetched: Package): Update.Package {
         val local = localReleaseConfig?.pkg
@@ -980,36 +980,60 @@ internal class UpdateTask(
             }
         }
 
+        fun awaitResourceUpdates(
+        ) {
+            val startTime = System.currentTimeMillis()
+            val microsecond = TimeUnit.MICROSECONDS.toNanos(1)
+            Log.d(TAG, "awaitDownloads: Starting wait.")
+
+            while (resourceDownloadStatus == ResourceUpdateStatus.RESOURCES_DOWNLOADING && !updateTimedOut.get()) {
+                if (isDone) {
+                    break
+                }
+                LockSupport.parkNanos(microsecond)
+            }
+
+            if (!updateTimedOut.get()) {
+                // Log saying that the process timedout - Pending on timeout logic
+                Log.d(TAG, "awaitResources: Timeout.")
+            }
+            logTimeTaken(startTime, "awaitDownloads: Wait ended.")
+        }
+
         fun installDownloadedResources(): Resources? {
-            val finished = futures.filter { it.isDone }
-                .map { it.get() }
+            if (resourceDownloadStatus != ResourceUpdateStatus.RESOURCES_INSTALLING) {
+                resourceDownloadStatus = ResourceUpdateStatus.RESOURCES_INSTALLING
+                val finished = futures.filter { it.isDone }
+                    .map { it.get() }
 
-            copied = finished.filterIsInstance<Result.Ok<Pair<ReleaseConfig.Split, TempWriter>>>()
-                .map { copyResource(it.v.first, it.v.second) }
-                .mapNotNull { it.get() }
+                copied = finished.filterIsInstance<Result.Ok<Pair<ReleaseConfig.Split, TempWriter>>>()
+                    .map { copyResource(it.v.first, it.v.second) }
+                    .mapNotNull { it.get() }
 
-            trackInfo("updated_resources", JSONObject().put("resources", copied.map { it.toJSON() }))
-            skipped = newResources.filter { !copied.contains(it) }
+                trackInfo("updated_resources", JSONObject().put("resources", copied.map { it.toJSON() }))
+                skipped = newResources.filter { !copied.contains(it) }
 
-            if (copied.isEmpty()) {
-                Log.d(TAG, "No new resources to install.")
-                return null
+                if (copied.isEmpty()) {
+                    Log.d(TAG, "No new resources to install.")
+                    return null
+                }
+
+                val outdated = currentResourceManifest.orEmpty().filter {
+                    skipped.contains(it)
+                }
+                val latest = newResourceManifest.filter {
+                    copied.contains(it)
+                }
+                Log.d(TAG, "Retaining outdated resources: $outdated")
+                Log.d(TAG, "Retaining common resources: $commonResources")
+                Log.d(TAG, "Latest resources installed: $latest")
+                val resources =
+                    ReleaseConfig.ResourceManifest(outdated + latest + commonResources.toList())
+                writeResourceManifest(resources)
+
+                return resources
             }
-
-            val outdated = currentResourceManifest.orEmpty().filter {
-                skipped.contains(it)
-            }
-            val latest = newResourceManifest.filter {
-                copied.contains(it)
-            }
-            Log.d(TAG, "Retaining outdated resources: $outdated")
-            Log.d(TAG, "Retaining common resources: $commonResources")
-            Log.d(TAG, "Latest resources installed: $latest")
-            val resources =
-                ReleaseConfig.ResourceManifest(outdated + latest + commonResources.toList())
-            writeResourceManifest(resources)
-
-            return resources
+            return null
         }
 
         fun completeResourceDownload() {
@@ -1129,6 +1153,12 @@ internal class UpdateTask(
         FINISHED
     }
 
+    private enum class ResourceUpdateStatus {
+        RESOURCES_DOWNLOADING,
+        RESOURCES_INSTALLING,
+        RESOURCES_TIMEDOUT
+    }
+
     private object LogKey {
         const val PACKAGE_UPDATE_RESULT = "package_update_result"
     }
@@ -1137,7 +1167,7 @@ internal class UpdateTask(
         const val TAG = "UpdateTask"
         const val LABEL = "ota_update"
         const val RETRY_LIMIT = 1
-        val SDK_VERSION: String =  Workspace.ctx?.getString(R.string.hyper_ota_version) ?: "undefined"
+        val SDK_VERSION: String = Workspace.ctx?.getString(R.string.hyper_ota_version) ?: "undefined"
 
         private fun <V> doAsync(callable: Callable<V>): Future<V> =
             OTAUtils.doAsync(callable)
