@@ -2,7 +2,7 @@
 
 set -e
 
-KMS_KEY_ID="alias/my-local-key"
+KMS_KEY_ID="89aadfb2-cdf4-4249-9fe5-a48d774ddcaa"
 OUTPUT_FILE=".env"
 > "$OUTPUT_FILE"
 

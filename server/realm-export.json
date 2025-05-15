@@ -1,0 +1,38 @@
+{
+  "realm": "hyperOTA",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "zepto",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "authorizationServicesEnabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "rootUrl": "http://localhost:9000",
+      "redirectUris": ["http://localhost:9000/dashboard/*"],
+      "webOrigins": ["http://localhost:9000"]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "Audience Scope",
+      "description": "Add correct aud to JWT token issued by keycloak",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "OTA Server Client Mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "zepto",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

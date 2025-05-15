@@ -21,7 +21,9 @@ use crate::utils::db::schema::hyperotaserver::organisations::dsl::*;
 
 use crate::utils::db::models::OrgEnty;
 use crate::utils::keycloak::get_token;
+use crate::utils::transaction_manager::TransactionManager;
 
+mod config;
 mod package;
 mod release;
 
@@ -34,6 +36,7 @@ pub fn add_routes() -> Scope {
         .service(add_application)
         .service(Scope::new("/package").service(package::add_routes()))
         .service(Scope::new("/release").service(release::add_routes()))
+        .service(Scope::new("/config").service(config::add_routes()))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -150,19 +153,34 @@ async fn add_application(
 
     let organisation = auth_response.organisation;
 
-    let organisation = validate_user(organisation, WRITE).map_err(error::ErrorUnauthorized)?;
+    println!("Validating organisation: {:?}", organisation);
+    let organisation = validate_user(organisation, WRITE).map_err(|e| {
+        println!("Error validating organisation: {:?}", e);
+        error::ErrorUnauthorized(e)
+    })?;
+    println!("Organisation validated successfully.");
+
+    // Create a transaction manager to track resources
+    let transaction = TransactionManager::new(&application, "application_create");
 
     // Get Keycloak Admin Token
     let client = reqwest::Client::new();
-    let admin_token = get_token(state.env.clone(), client)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+    println!("Retrieving Keycloak admin token...");
+    let admin_token = get_token(state.env.clone(), client).await.map_err(|e| {
+        println!("Error retrieving Keycloak admin token: {:?}", e);
+        error::ErrorInternalServerError(e)
+    })?;
+    println!("Admin token retrieved successfully.");
     let client = reqwest::Client::new();
     let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
     let realm = state.env.realm.clone();
 
     // Validate if user has access to this organisation
     // I might want to move this to a db; This does not scale
+    println!(
+        "Fetching Keycloak groups for organisation: {}",
+        organisation
+    );
     let groups = admin
         .realm_groups_get(
             &realm,
@@ -177,6 +195,7 @@ async fn add_application(
         .await
         .map_err(error::ErrorInternalServerError)?;
 
+    println!("Keycloak groups fetched: {:?}", groups);
     if groups.is_empty() {
         Err(error::ErrorBadRequest(Json(
             json!({"Error" : "Organisation not found"}),
@@ -197,8 +216,9 @@ async fn add_application(
         {
             return Err(error::ErrorConflict("Application already exists"));
         }
-        // If not present in db create entry in db and return success
-        let group_id = admin
+
+        // Step 1: Create application group in Keycloak
+        let parent_group_id = match admin
             .realm_groups_with_group_id_children_post(
                 &realm,
                 &groups[0].id.clone().unwrap_or_default().clone(),
@@ -208,41 +228,139 @@ async fn add_application(
                 },
             )
             .await
-            .map_err(error::ErrorInternalServerError)?
-            .unwrap_or_default();
-        // Create an admin group for the application
+        {
+            Ok(id) => {
+                let group_id = id.unwrap_or_default();
+                // Record this resource in the transaction
+                transaction.add_keycloak_group(&group_id);
+                println!("Created application group with ID: {}", group_id);
+                group_id
+            }
+            Err(e) => {
+                // No rollback needed yet - this is the first operation
+                return Err(error::ErrorInternalServerError(format!(
+                    "Failed to create application group: {}",
+                    e
+                )));
+            }
+        };
+
+        // Step 2: Create role groups and add user to them
         let roles = ["read", "write", "admin"];
         for role in roles {
-            let group_id = admin
+            match admin
                 .realm_groups_with_group_id_children_post(
                     &realm,
-                    &group_id,
+                    &parent_group_id,
                     GroupRepresentation {
                         name: Some(role.to_string()),
                         ..Default::default()
                     },
                 )
                 .await
-                .map_err(error::ErrorInternalServerError)?
-                .unwrap_or_default();
-            // Add the user to the role-specific group
-            admin
-                .realm_users_with_user_id_groups_with_group_id_put(&realm, sub, &group_id)
-                .await
-                .map_err(error::ErrorInternalServerError)?;
+            {
+                Ok(id) => {
+                    let role_group_id = id.unwrap_or_default();
+                    // Record this resource in the transaction
+                    transaction.add_keycloak_group(&role_group_id);
+                    println!("Created role group {} with ID: {}", role, role_group_id);
+
+                    // Add the user to the role-specific group
+                    match admin
+                        .realm_users_with_user_id_groups_with_group_id_put(
+                            &realm,
+                            sub,
+                            &role_group_id,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            // Record this user-group relationship in the transaction
+                            transaction.add_keycloak_resource(
+                                "user_group_membership",
+                                &format!("{}:{}", sub, role_group_id),
+                            );
+                            println!("Added user to role group: {}", role);
+                        }
+                        Err(e) => {
+                            // Handle rollback and return error
+                            if let Err(rollback_err) = transaction
+                                .handle_rollback_if_needed(&admin, &realm, &state)
+                                .await
+                            {
+                                println!("Rollback failed: {}", rollback_err);
+                            }
+
+                            return Err(error::ErrorInternalServerError(format!(
+                                "Failed to add user to role group: {}",
+                                e
+                            )));
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Handle rollback and return error
+                    if let Err(rollback_err) = transaction
+                        .handle_rollback_if_needed(&admin, &realm, &state)
+                        .await
+                    {
+                        println!("Rollback failed: {}", rollback_err);
+                    }
+
+                    return Err(error::ErrorInternalServerError(format!(
+                        "Failed to create role group: {}",
+                        e
+                    )));
+                }
+            }
         }
 
-        let mut conn = state
-            .db_pool
-            .get()
-            .map_err(error::ErrorInternalServerError)?;
+        // Step 3: Get organization from database
+        let mut conn = match state.db_pool.get() {
+            Ok(conn) => conn,
+            Err(e) => {
+                // Handle rollback and return error
+                if let Err(rollback_err) = transaction
+                    .handle_rollback_if_needed(&admin, &realm, &state)
+                    .await
+                {
+                    println!("Rollback failed: {}", rollback_err);
+                }
 
-        let org_entry = organisations
+                return Err(error::ErrorInternalServerError(format!(
+                    "Database connection error: {}",
+                    e
+                )));
+            }
+        };
+
+        println!("Querying database for organisation entry: {}", organisation);
+        let org_entry = match organisations
             .filter(name.eq(organisation.clone()))
             .first::<OrgEnty>(&mut conn)
-            .map_err(error::ErrorInternalServerError)?;
+        {
+            Ok(entry) => {
+                println!("Organisation entry retrieved: {:?}", entry);
+                entry
+            }
+            Err(e) => {
+                // Handle rollback and return error
+                if let Err(rollback_err) = transaction
+                    .handle_rollback_if_needed(&admin, &realm, &state)
+                    .await
+                {
+                    println!("Rollback failed: {}", rollback_err);
+                }
 
-        let workspace = create_workspace(
+                return Err(error::ErrorInternalServerError(format!(
+                    "Failed to query organisation entry: {}",
+                    e
+                )));
+            }
+        };
+
+        // Step 4: Create workspace in Superposition
+        let workspace = match create_workspace(
             &state.superposition_configuration,
             &org_entry.superposition_organisation,
             CreateWorkspaceRequestContent {
@@ -252,8 +370,30 @@ async fn add_application(
             },
         )
         .await
-        .map_err(error::ErrorInternalServerError)?;
+        {
+            Ok(workspace) => {
+                // Record Superposition resource using workspace name as the ID
+                transaction.set_superposition_resource(&workspace.workspace_name);
+                println!("Created workspace in Superposition: {:?}", workspace);
+                workspace
+            }
+            Err(e) => {
+                // Handle rollback and return error
+                if let Err(rollback_err) = transaction
+                    .handle_rollback_if_needed(&admin, &realm, &state)
+                    .await
+                {
+                    println!("Rollback failed: {}", rollback_err);
+                }
 
+                return Err(error::ErrorInternalServerError(format!(
+                    "Failed to create workspace in Superposition: {}",
+                    e
+                )));
+            }
+        };
+
+        // Step 5: Create default configurations
         let create_default_config_string = default_config::<String>(
             state.superposition_configuration.clone(),
             workspace.workspace_name.clone(),
@@ -265,45 +405,129 @@ async fn add_application(
             org_entry.superposition_organisation.clone(),
         );
 
-        create_default_config_string(
-            "config.version".to_string(),
-            "0.0.0".to_string(),
-            "Value indicating the version of the release config".to_string(),
-        )
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+        // Helper function to create default config with error handling
+        async fn create_config_with_tx<T, E>(
+            create_fn: impl futures::Future<Output = Result<T, E>>,
+            key: &str,
+            transaction: &TransactionManager,
+            admin: &KeycloakAdmin,
+            realm: &str,
+            state: &web::Data<AppState>,
+        ) -> Result<T, actix_web::Error>
+        where
+            E: std::fmt::Display,
+        {
+            match create_fn.await {
+                Ok(result) => {
+                    println!("Created configuration for key: {}", key);
+                    Ok(result)
+                }
+                Err(e) => {
+                    // Handle rollback
+                    if let Err(rollback_err) = transaction
+                        .handle_rollback_if_needed(admin, realm, state)
+                        .await
+                    {
+                        println!("Rollback failed: {}", rollback_err);
+                    }
 
-        create_default_config_int(
-            "config.release_config_timeout".to_string(),
-            1000,
-            "Value indicating the version of the release config".to_string(),
-        )
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+                    Err(error::ErrorInternalServerError(format!(
+                        "Failed to create configuration for {}: {}",
+                        key, e
+                    )))
+                }
+            }
+        }
 
-        create_default_config_int(
-            "config.package_timeout".to_string(),
-            1000,
-            "Indicating the timeout for downloading the package block".to_string(),
+        // Create all configurations with transaction-aware error handling
+        println!("Creating default configuration (string): key=config.version, value=0.0.0");
+        create_config_with_tx(
+            create_default_config_string(
+                "config.version".to_string(),
+                "0.0.0".to_string(),
+                "Value indicating the version of the release config".to_string(),
+            ),
+            "config.version",
+            &transaction,
+            &admin,
+            &realm,
+            &state,
         )
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+        .await?;
 
-        create_default_config_string(
-            "package.name".to_string(),
-            workspace.workspace_name.clone(),
-            "Value indicating the version of the release config".to_string(),
+        println!(
+            "Creating default configuration (int): key=config.release_config_timeout, value=1000"
+        );
+        create_config_with_tx(
+            create_default_config_int(
+                "config.release_config_timeout".to_string(),
+                1000,
+                "Value indicating the version of the release config".to_string(),
+            ),
+            "config.release_config_timeout",
+            &transaction,
+            &admin,
+            &realm,
+            &state,
         )
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+        .await?;
 
-        create_default_config_int(
-            "package.version".to_string(),
-            0,
-            "Value indicating the version of the package".to_string(),
+        println!("Creating default configuration (int): key=config.package_timeout, value=1000");
+        create_config_with_tx(
+            create_default_config_int(
+                "config.package_timeout".to_string(),
+                1000,
+                "Indicating the timeout for downloading the package block".to_string(),
+            ),
+            "config.package_timeout",
+            &transaction,
+            &admin,
+            &realm,
+            &state,
         )
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+        .await?;
+
+        println!(
+            "Creating default configuration (string): key=package.name, value={}",
+            workspace.workspace_name
+        );
+        create_config_with_tx(
+            create_default_config_string(
+                "package.name".to_string(),
+                workspace.workspace_name.clone(),
+                "Value indicating the version of the release config".to_string(),
+            ),
+            "package.name",
+            &transaction,
+            &admin,
+            &realm,
+            &state,
+        )
+        .await?;
+
+        println!("Creating default configuration (int): key=package.version, value=0");
+        create_config_with_tx(
+            create_default_config_int(
+                "package.version".to_string(),
+                0,
+                "Value indicating the version of the package".to_string(),
+            ),
+            "package.version",
+            &transaction,
+            &admin,
+            &realm,
+            &state,
+        )
+        .await?;
+
+        // Mark transaction as complete since all operations have succeeded
+        transaction.set_database_inserted();
+
+        println!("Transaction completed successfully");
+        println!(
+            "Returning final response: application={}, organisation={}",
+            application, organisation
+        );
 
         actix_web::Result::Ok(Json(Application {
             application,

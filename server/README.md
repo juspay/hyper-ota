@@ -1,4 +1,4 @@
-# Hyper OTA Server
+Hyper OTA Server
 
 Backend to support SAAS offering of Hyper OTA SDK
 
@@ -47,7 +47,7 @@ Server
   - /organisation/user/update
   - /organisation/user/delete
   - /organisation/delete
-  - /organisation/users
+  - /organisation/user/list
 
   - /organisation/application
     - Indicating that packages can be shared between their clients
@@ -159,6 +159,7 @@ Steps to setup account in keycloak
     - Client authentication - On
     - Client authorization - On
     - OAuth 2.0 Device Authorization Grant
+    - Direct Access Grant
 6. Login Settings
     - Root url, Web Origins : http://localhost:9000
     - Everything else : http://localhost:9000/dashboard/
@@ -174,6 +175,7 @@ Steps to setup account in keycloak
     - Name : OTA Server Client Mapper
     - Add to Access Token : On
     - Add to introspection : On
+    - Included Client Audience : Client created above
 12. Add Audience Scope to Client with Default Assigned type
 13. Add Service account roles
     - manage-users

@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: hyper-ota-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hyperotaserver
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  keycloak-db:
+    image: postgres:15
+    container_name: keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5434:5432"
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    build:
+      context: .
+      dockerfile: keycloak.Dockerfile
+    container_name: keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8180:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    command:
+      - start-dev
+      - --import-realm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hyper-ota-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/hyperotaserver
+      STATIC_FILES_DIR: "/app/static"
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: hyperOTA
+      KEYCLOAK_CLIENT_ID: zepto
+      KEYCLOAK_SECRET: ${KEYCLOAK_SECRET}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  postgres_data:
+  keycloak_postgres_data:

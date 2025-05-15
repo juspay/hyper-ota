@@ -16,7 +16,8 @@ use dotenvy::dotenv;
 use middleware::auth::Auth;
 use reqwest::Client;
 use superposition_rust_sdk::apis::configuration::Configuration;
-use utils::{db, kms::decrypt_kms};
+use user::add_routes;
+use utils::{db, kms::decrypt_kms, transaction_manager::start_cleanup_job};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -45,6 +46,8 @@ async fn main() -> std::io::Result<()> {
     // Initialize DB pool
     let pool = db::establish_pool(&aws_kms_client).await;
     let secret = decrypt_kms(&aws_kms_client, enc_sec).await;
+
+    println!("secret: {}", secret);
 
     let env = types::Environment {
         public_url,
@@ -79,6 +82,11 @@ async fn main() -> std::io::Result<()> {
         s3_client: aws_s3_client,
     });
 
+    // Start the background cleanup job for transaction reconciliation
+    let app_state_data = web::Data::from(app_state.clone());
+    let _cleanup_handle = start_cleanup_job(app_state_data.clone());
+    println!("Started transaction cleanup background job");
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))
@@ -94,6 +102,11 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/organisations")
                     .wrap(Auth { env: env.clone() })
                     .service(organisation::add_routes()),
+            )
+            .service(
+                web::scope("/organisation/user")
+                    .wrap(Auth { env: env.clone() })
+                    .service(organisation::user::add_routes()),
             )
             .service(
                 web::scope("/user")

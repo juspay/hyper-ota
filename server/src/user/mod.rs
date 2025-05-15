@@ -13,16 +13,19 @@ use keycloak::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::organisation::application::Application;
 use crate::{
     middleware::auth::AuthResponse,
+    organisation::application::Application,
     organisation::Organisation,
     types::AppState,
     utils::keycloak::{decode_jwt_token, get_token},
 };
 
 pub fn add_routes() -> Scope {
-    web::scope("").service(create_user).service(login)
+    web::scope("")
+        .service(create_user)
+        .service(login)
+        .service(get_user)
 }
 
 /*
@@ -48,7 +51,7 @@ struct UserCredentials {
     password: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct UserToken {
     access_token: String,
     token_type: String,
@@ -166,10 +169,10 @@ async fn login_implementation(
             .json()
             .await
             .map_err(error::ErrorInternalServerError)?;
+
         let token_data = decode_jwt_token(&token.access_token, &state.env.keycloak_public_key)
-            .map_err(error::ErrorInternalServerError)?;
-        // Get Keycloak Admin Token
-        let client = reqwest::Client::new();
+            .map_err(|e| error::ErrorUnauthorized("Token has expired or is invalid"))?;
+
         let admin_token = get_token(state.env.clone(), client)
             .await
             .map_err(error::ErrorInternalServerError)?;
@@ -183,6 +186,7 @@ async fn login_implementation(
             state,
         )
         .await?;
+
         user_resp.user_token = Some(token);
         return Ok(user_resp);
     }
