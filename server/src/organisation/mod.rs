@@ -1,31 +1,34 @@
+use crate::middleware::auth::{AuthResponse, ROLES};
+use crate::types::AppState;
 use actix_web::{
-    error, post,
-    web::{self, Json},
+    delete, error, get, post,
+    web::{self, Json, Path},
     HttpMessage, HttpRequest, Scope,
 };
 use application::Application;
-use diesel::RunQueryDsl;
-use keycloak::{types::GroupRepresentation, KeycloakAdmin};
+use keycloak::KeycloakAdmin;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use superposition_rust_sdk::{
-    apis::default_api::creater_organisation, models::CreaterOrganisationRequestContent,
-};
-
-use crate::{
-    db::schema::hyperotaserver::organisations::dsl::organisations, middleware::auth::AuthResponse,
-};
-use crate::{types::AppState, utils::db::models::OrgEnty};
+use std::collections::HashMap;
 
 pub mod application;
-mod user;
+pub mod transaction;
+pub mod user;
 
+// Constants
+const MAX_ORG_NAME_LENGTH: usize = 50;
+
+// Routes
 pub fn add_routes() -> Scope {
     Scope::new("")
         .service(create_organisation)
+        .service(delete_organisation)
+        .service(list_organisations)
         .service(Scope::new("/applications").service(application::add_routes()))
         .service(Scope::new("/user").service(user::add_routes()))
 }
+
+// Structs
 #[derive(Serialize, Deserialize)]
 pub struct Organisation {
     pub name: String,
@@ -34,9 +37,11 @@ pub struct Organisation {
 }
 
 #[derive(Serialize, Deserialize)]
-struct OrganisationCreatedRequest {
-    name: String,
+pub struct OrganisationCreatedRequest {
+    pub name: String,
 }
+
+// API Implementations
 
 #[post("/create")]
 async fn create_organisation(
@@ -44,6 +49,11 @@ async fn create_organisation(
     body: Json<OrganisationCreatedRequest>,
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<Organisation>> {
+    let organisation = body.name.clone();
+
+    // Validate organization name
+    validate_organisation_name(&organisation)?;
+
     // Get Keycloak Admin Token
     let auth_response = req
         .extensions()
@@ -56,87 +66,241 @@ async fn create_organisation(
     let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
     let realm = state.env.realm.clone();
 
-    let organisation = body.name.clone();
-
-    // I might want to move this to a db; This does not scale
+    // Check if organization already exists
     let groups = admin
         .realm_groups_get(
             &realm,
             None,
-            Some(true), // Exact Match
+            Some(true),
             None,
-            Some(2), // Check only one group; Should be 5xx if more than 1
+            Some(2),
             Some(false),
             None,
             Some(organisation.clone()),
         )
         .await
-        .map_err(error::ErrorInternalServerError)?;
+        .map_err(|e| {
+            error::ErrorInternalServerError(format!("Failed to check existing groups: {}", e))
+        })?;
 
-    if groups.is_empty() {
-        let group_id = admin
-            .realm_groups_post(
-                &realm,
-                GroupRepresentation {
-                    name: Some(organisation.clone()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(error::ErrorInternalServerError)?
-            .unwrap_or_default();
-        let roles = ["read", "write", "admin", "owner"];
-        for role in roles {
-            let group_id = admin
-                .realm_groups_with_group_id_children_post(
-                    &realm,
-                    &group_id,
-                    GroupRepresentation {
-                        name: Some(role.to_string()),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(error::ErrorInternalServerError)?
-                .unwrap_or_default();
-            // Add the user to the role-specific group
-            admin
-                .realm_users_with_user_id_groups_with_group_id_put(&realm, sub, &group_id)
-                .await
-                .map_err(error::ErrorInternalServerError)?;
-        }
-
-        let cac_organisation = creater_organisation(
-            &state.superposition_configuration,
-            CreaterOrganisationRequestContent {
-                name: organisation.clone(),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(error::ErrorInternalServerError)?; // TODO :: Need to revert group creation; Else we will get unowner organisations
-
-        let mut conn = state
-            .db_pool
-            .get()
-            .map_err(error::ErrorInternalServerError)?;
-
-        diesel::insert_into(organisations)
-            .values(OrgEnty {
-                name: organisation.clone(),
-                superposition_organisation: cac_organisation.id.clone(),
-            })
-            .execute(&mut conn)
-            .map_err(error::ErrorInternalServerError)?;
-        return Ok(Json(Organisation {
-            name: organisation,
-            applications: vec![],
-            access: roles.iter().map(|&s| s.to_string()).collect(),
-        }));
+    if !groups.is_empty() {
+        return Err(error::ErrorBadRequest(Json(
+            json!({"Error" : "Organisation name is taken"}),
+        )));
     }
 
-    // Reject if organisation is present in keycloak as a group
-    Err(error::ErrorBadRequest(Json(
-        json!({"Error" : "Organisation name is taken"}),
-    )))
+    // Create the organization using the transaction manager
+    let org = transaction::create_organisation_with_transaction(
+        &organisation,
+        &admin,
+        &realm,
+        sub,
+        &state,
+    )
+    .await?;
+
+    Ok(Json(org))
+}
+
+#[delete("/{org_name}")]
+async fn delete_organisation(
+    req: HttpRequest,
+    path: Path<String>,
+    state: web::Data<AppState>,
+) -> actix_web::Result<Json<serde_json::Value>> {
+    let organisation = path.into_inner();
+
+    // Validate organization name
+    validate_organisation_name(&organisation)?;
+
+    // Get Keycloak Admin Token
+    let auth_response = req
+        .extensions()
+        .get::<AuthResponse>()
+        .cloned()
+        .ok_or(error::ErrorUnauthorized("Token Parse Failed"))?;
+    let admin_token = auth_response.admin_token.clone();
+    let sub = &auth_response.sub;
+    let client = reqwest::Client::new();
+    let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
+    let realm = state.env.realm.clone();
+
+    // Check if organization exists
+    let groups = admin
+        .realm_groups_get(
+            &realm,
+            None,
+            Some(true),
+            None,
+            Some(2),
+            Some(false),
+            None,
+            Some(organisation.clone()),
+        )
+        .await
+        .map_err(|e| {
+            error::ErrorInternalServerError(format!("Failed to check existing groups: {}", e))
+        })?;
+
+    if groups.is_empty() {
+        return Err(error::ErrorBadRequest(Json(
+            json!({"Error" : "Organisation does not exist"}),
+        )));
+    }
+
+    // Check if user has permissions to delete organization
+    if auth_response.organisation.as_ref().map_or(false, |org| {
+        org.name == organisation && org.is_admin_or_higher()
+    }) {
+        // Delete the organization using the transaction manager
+        transaction::delete_organisation_with_transaction(
+            &organisation,
+            &admin,
+            &realm,
+            sub,
+            &state,
+        )
+        .await?;
+
+        Ok(Json(
+            json!({"Success" : "Organisation deleted successfully"}),
+        ))
+    } else {
+        Err(error::ErrorForbidden(Json(
+            json!({"Error" : "You do not have permission to delete this organisation"}),
+        )))
+    }
+}
+
+#[get("")]
+async fn list_organisations(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+) -> actix_web::Result<Json<Vec<Organisation>>> {
+    // Get Keycloak Admin Token
+    let auth_response = req
+        .extensions()
+        .get::<AuthResponse>()
+        .cloned()
+        .ok_or(error::ErrorUnauthorized("Token Parse Failed"))?;
+    let admin_token = auth_response.admin_token.clone();
+    let sub = &auth_response.sub;
+    let client = reqwest::Client::new();
+    let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
+    let realm = state.env.realm.clone();
+
+    // Get user's groups
+    let groups = admin
+        .realm_users_with_user_id_groups_get(&realm, sub, None, None, None, None)
+        .await
+        .map_err(|e| {
+            error::ErrorInternalServerError(format!("Failed to fetch user groups: {}", e))
+        })?;
+
+    // Extract group paths
+    let group_paths: Vec<String> = groups.iter().filter_map(|g| g.path.clone()).collect();
+
+    // Parse groups into organizations
+    let organizations = parse_user_organizations(group_paths);
+
+    Ok(Json(organizations))
+}
+
+// Helper function to parse Keycloak groups into organizations
+fn parse_user_organizations(groups: Vec<String>) -> Vec<Organisation> {
+    let mut organisations: HashMap<String, Organisation> = HashMap::new();
+
+    for group in groups {
+        let path = group.trim_matches('/'); // Remove leading/trailing slashes
+        let parts: Vec<&str> = path.split('/').collect();
+
+        if parts.is_empty() {
+            continue;
+        }
+
+        let access = parts.last().unwrap_or(&"").to_string();
+
+        // Skip if no organization name found
+        if parts.is_empty() {
+            continue;
+        }
+
+        let organisation_name = parts[0].to_string();
+        let application_name = if parts.len() == 3 {
+            Some(parts[1].to_string())
+        } else {
+            None
+        };
+
+        if let Some(app_name) = application_name {
+            // Handle application-level access
+            let organisation =
+                organisations
+                    .entry(organisation_name.clone())
+                    .or_insert(Organisation {
+                        name: organisation_name.clone(),
+                        applications: vec![],
+                        access: vec![],
+                    });
+
+            let app = organisation
+                .applications
+                .iter_mut()
+                .find(|app| app.application == app_name);
+
+            if let Some(app) = app {
+                app.access.push(access);
+            } else {
+                organisation.applications.push(Application {
+                    application: app_name,
+                    organisation: organisation_name.clone(),
+                    access: vec![access],
+                    release_config: None,
+                });
+            }
+        } else {
+            // Handle organisation-level access
+            let organisation =
+                organisations
+                    .entry(organisation_name.clone())
+                    .or_insert(Organisation {
+                        name: organisation_name.clone(),
+                        applications: vec![],
+                        access: vec![],
+                    });
+
+            organisation.access.push(access);
+        }
+    }
+
+    organisations.into_values().collect()
+}
+
+/// Validate organization name for security and usability
+pub fn validate_organisation_name(name: &str) -> actix_web::Result<()> {
+    let trimmed = name.trim();
+
+    if trimmed.is_empty() {
+        return Err(error::ErrorBadRequest(Json(
+            json!({"Error" : "Organisation name cannot be empty"}),
+        )));
+    }
+
+    if trimmed.len() > MAX_ORG_NAME_LENGTH {
+        return Err(error::ErrorBadRequest(Json(
+            json!({"Error" : "Organisation name is too long"}),
+        )));
+    }
+
+    // Basic pattern matching for valid organization name
+    if !trimmed
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == ' ' || c == '-' || c == '_')
+    {
+        return Err(error::ErrorBadRequest(Json(
+            json!({"Error" : "Organisation name can only contain alphanumeric characters, spaces, hyphens, and underscores"}),
+        )));
+    }
+
+    Ok(())
 }

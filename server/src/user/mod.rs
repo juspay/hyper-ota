@@ -13,16 +13,19 @@ use keycloak::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::organisation::application::Application;
 use crate::{
     middleware::auth::AuthResponse,
+    organisation::application::Application,
     organisation::Organisation,
     types::AppState,
     utils::keycloak::{decode_jwt_token, get_token},
 };
 
 pub fn add_routes() -> Scope {
-    web::scope("").service(create_user).service(login)
+    web::scope("")
+        .service(create_user)
+        .service(login)
+        .service(get_user)
 }
 
 /*
@@ -48,7 +51,7 @@ struct UserCredentials {
     password: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct UserToken {
     access_token: String,
     token_type: String,
@@ -62,11 +65,15 @@ async fn create_user(
     req: Json<UserCredentials>,
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
+    println!("[CREATE_USER] Attempting to create user: {}", req.name);
+
     // Get Keycloak Admin Token
     let client = reqwest::Client::new();
     let admin_token = get_token(state.env.clone(), client)
         .await
         .map_err(error::ErrorInternalServerError)?;
+    println!("[CREATE_USER] Got admin token successfully");
+
     let client = reqwest::Client::new();
     let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
     let realm = state.env.realm.clone();
@@ -96,14 +103,17 @@ async fn create_user(
         .await
         .map_err(error::ErrorInternalServerError)?;
 
+    println!("[CREATE_USER] Checking if user already exists");
     // Reject if user is present in db
     let exists = users.iter().any(|user| user.id == Some(req.name.clone()));
     if exists {
+        println!("[CREATE_USER] User {} already exists", req.name);
         return Err(error::ErrorBadRequest(Json(
             json!({"Error" : "User already Exists"}),
         )));
     }
 
+    println!("[CREATE_USER] Creating new user in Keycloak: {}", req.name);
     // If not present in keycloak create a new user in keycloak
     let user = UserRepresentation {
         username: Some(req.name.clone()),
@@ -136,6 +146,8 @@ async fn login_implementation(
     req: UserCredentials,
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
+    println!("[LOGIN] Login attempt for user: {}", req.name);
+
     // Move ENVs to App State
     let url = state.env.keycloak_url.clone();
     let client_id = state.env.client_id.clone();
@@ -143,6 +155,7 @@ async fn login_implementation(
     let realm = state.env.realm.clone();
 
     let url = format!("{}/realms/{}/protocol/openid-connect/token", url, realm);
+    println!("[LOGIN] Attempting Keycloak login at URL: {}", url);
 
     // Keycloak login API
     let client = reqwest::Client::new();
@@ -162,14 +175,15 @@ async fn login_implementation(
         .map_err(error::ErrorInternalServerError)?; // Handle request failure
 
     if response.status().is_success() {
+        println!("[LOGIN] Login successful for user: {}", req.name);
         let token: UserToken = response
             .json()
             .await
             .map_err(error::ErrorInternalServerError)?;
-        let token_data = decode_jwt_token(&token.access_token, &state.env.keycloak_public_key)
-            .map_err(error::ErrorInternalServerError)?;
-        // Get Keycloak Admin Token
-        let client = reqwest::Client::new();
+
+        let token_data = decode_jwt_token(&token.access_token, &state.env.keycloak_public_key, &state.env.client_id)
+            .map_err(|e| error::ErrorUnauthorized("Token has expired or is invalid"))?;
+
         let admin_token = get_token(state.env.clone(), client)
             .await
             .map_err(error::ErrorInternalServerError)?;
@@ -183,8 +197,11 @@ async fn login_implementation(
             state,
         )
         .await?;
+
         user_resp.user_token = Some(token);
         return Ok(user_resp);
+    } else {
+        println!("[LOGIN] Login failed for user: {}", req.name);
     }
 
     // If response is not successful, extract error message
@@ -220,6 +237,8 @@ async fn get_user_impl(
     authresponse: AuthResponse,
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
+    println!("[GET_USER] Fetching user details for ID: {}", authresponse.sub);
+
     // Get list of organisations and application in orginisation for each user
     let user_id: String = authresponse.sub;
 
@@ -233,6 +252,7 @@ async fn get_user_impl(
         .realm_users_with_user_id_groups_get(&realm, &user_id, None, None, None, None)
         .await
         .map_err(error::ErrorInternalServerError)?;
+    println!("[GET_USER] Retrieved {} groups for user", groups.len());
 
     // Reject if organisation is present in db
     // If not present in db create entry in db and return success
@@ -246,9 +266,12 @@ async fn get_user_impl(
 }
 
 fn parse_groups(user_id: String, groups: Vec<String>) -> User {
+    println!("[PARSE_GROUPS] Parsing {} groups for user: {}", groups.len(), user_id);
+    
     let mut organisations: HashMap<String, Organisation> = HashMap::new();
 
-    for group in groups {
+    for group in groups.iter() {
+        println!("[PARSE_GROUPS] Processing group: {}", group);
         let path = group.trim_matches('/'); // Remove leading/trailing slashes
         let parts: Vec<&str> = path.split('/').collect();
 
@@ -302,6 +325,7 @@ fn parse_groups(user_id: String, groups: Vec<String>) -> User {
         }
     }
 
+    println!("[PARSE_GROUPS] Finished parsing. Found {} organisations", organisations.len());
     User {
         user_id,
         organisations: organisations.into_values().collect(),

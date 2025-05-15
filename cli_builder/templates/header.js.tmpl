@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import { {{{imports}}}, {{{client}}} } from "{{{importFrom}}}"
+import fs from "fs";
+import os from "os";
+import { open } from 'node:fs/promises';
+
+const tokenFile = path.join(os.homedir(), ".{{{cliName}}}".toLowerCase().replace(" ", "-"));
+const raw = fs.readFileSync(tokenFile, "utf8").trim();
+
+if (!raw) {
+    console.error("No token found in ~/" + ".{{{cliName}}}".toLowerCase().replace(" ", "-") + ", please add an access token there");
+    process.exit(1);
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
+const client = new {{{client}}}({
+    token: { token: raw },
+    endpoint: "{{{endpointURL}}}"
+});
+
+const program = 
+    new Command()
+        .name("{{cliName}}")
+        .description("{{cliDescription}}")
+        .version("{{cliVersion}}");

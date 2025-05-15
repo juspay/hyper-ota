@@ -3,6 +3,14 @@ name = "hyper-ota-server"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "hyper_ota_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hyper-ota-server"
+path = "src/main.rs"
+
 [dependencies]
 actix-web = "4"
 cac_client = { git = "https://github.com/juspay/superposition.git", tag = "cac_client-v0.16.1" }
@@ -11,9 +19,9 @@ actix-files = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 futures = "0.3"
-diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid"] }
+diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "serde_json", "chrono"] }
 dotenvy = "0.15"
-superposition-rust-sdk = {path = "../superposition/smithy/superposition-rust-sdk" }
+superposition-rust-sdk = { git = "https://github.com/anuragdvd/superposition-rust-sdk", branch = "feat/smithy-rust-test", package = "superposition-rust-sdk" }
 reqwest = { version = "^0.12.5"}
 jsonwebtoken = "9.3.1"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
@@ -24,3 +32,15 @@ actix-multipart = "0.7.2"
 uuid =  { version = "1.16.0", features = ["serde", "v7", "v4"]}
 urlencoding = "2.1.2"
 base64 = "0.22"
+actix-web-thiserror = "0.2.7"
+thiserror = "2.0.12"
+log = "0.4.27"
+chrono = "0.4.41"
+tracing = "0.1.41"
+
+[dev-dependencies]
+mockall = "0.11.4"
+lazy_static = "1.4.0"
+actix-rt = "2.8.0"
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }

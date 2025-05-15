@@ -19,4 +19,5 @@ pub struct Environment {
     pub secret: String,
     pub realm: String,
     pub bucket_name: String,
+    pub superposition_org_id: String,
 }

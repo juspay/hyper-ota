@@ -1,4 +1,4 @@
-# Hyper OTA Server
+Hyper OTA Server
 
 Backend to support SAAS offering of Hyper OTA SDK
 
@@ -47,7 +47,7 @@ Server
   - /organisation/user/update
   - /organisation/user/delete
   - /organisation/delete
-  - /organisation/users
+  - /organisation/user/list
 
   - /organisation/application
     - Indicating that packages can be shared between their clients
@@ -159,6 +159,7 @@ Steps to setup account in keycloak
     - Client authentication - On
     - Client authorization - On
     - OAuth 2.0 Device Authorization Grant
+    - Direct Access Grant
 6. Login Settings
     - Root url, Web Origins : http://localhost:9000
     - Everything else : http://localhost:9000/dashboard/
@@ -174,6 +175,7 @@ Steps to setup account in keycloak
     - Name : OTA Server Client Mapper
     - Add to Access Token : On
     - Add to introspection : On
+    - Included Client Audience : Client created above
 12. Add Audience Scope to Client with Default Assigned type
 13. Add Service account roles
     - manage-users
@@ -186,3 +188,64 @@ Steps to setup account in keycloak
     - view-users
     - More are needed -- TODO find out
 14. Goto realm settings; Turn off all required actions
+
+## Quick Start
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Git
+
+### One-Command Setup
+
+1. **Clone the Repository**
+```bash
+git clone <repository-url>
+cd hyper-ota/server
+```
+
+2. **Start the Server**
+```bash
+# Development mode
+./run.sh dev
+
+# Or with building images
+./run.sh dev build
+
+# Production mode
+./run.sh prod
+
+# Run in detached mode
+./run.sh dev nobuild detach
+```
+
+### Usage Options
+
+```bash
+./run.sh [mode] [build] [detach]
+
+# Parameters:
+mode   - dev|prod (default: dev)
+build  - build|nobuild (default: nobuild)
+detach - detach|nodetach (default: nodetach)
+```
+
+### Services Started
+
+- Backend API (http://localhost:8081)
+- Keycloak (http://localhost:8180)
+  - Default admin credentials: admin/admin
+- LocalStack (AWS services emulator)
+- Superposition (Configuration management)
+- PostgreSQL databases
+  - hyperotaserver
+  - config
+  - keycloak-db
+
+### Development Workflow
+
+The development mode (`./run.sh dev`) provides:
+- Hot-reloading for backend changes
+- Automatic service restarts
+- Debug logging
+- Development-specific configurations

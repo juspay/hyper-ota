@@ -16,7 +16,8 @@ use dotenvy::dotenv;
 use middleware::auth::Auth;
 use reqwest::Client;
 use superposition_rust_sdk::apis::configuration::Configuration;
-use utils::{db, kms::decrypt_kms};
+use user::add_routes;
+use utils::{db, kms::decrypt_kms, transaction_manager::start_cleanup_job};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -28,6 +29,7 @@ async fn main() -> std::io::Result<()> {
     let realm = std::env::var("KEYCLOAK_REALM").expect("KEYCLOAK_REALM must be set");
     let publickey = std::env::var("KEYCLOAK_PUBLIC_KEY").expect("KEYCLOAK_PUBLIC_KEY must be set");
     let cac_url = std::env::var("SUPERPOSITION_URL").expect("SUPERPOSITION_URL must be set");
+    let superposition_org_id_env = std::env::var("SUPERPOSITION_ORG_ID").expect("SUPERPOSITION_ORG_ID must be set");
     let bucket_name = std::env::var("AWS_BUCKET").expect("AWS_BUCKET must be set");
     let public_url = std::env::var("PUBLIC_ENDPOINT").expect("PUBLIC_ENDPOINT must be set");
 
@@ -57,6 +59,7 @@ async fn main() -> std::io::Result<()> {
         secret: secret.clone(),
         realm,
         bucket_name,
+        superposition_org_id: superposition_org_id_env,
     };
 
     // This is required for localStack
@@ -79,6 +82,11 @@ async fn main() -> std::io::Result<()> {
         s3_client: aws_s3_client,
     });
 
+    // Start the background cleanup job for transaction reconciliation
+    let app_state_data = web::Data::from(app_state.clone());
+    let _cleanup_handle = start_cleanup_job(app_state_data.clone());
+    println!("Started transaction cleanup background job");
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::from(app_state.clone()))
@@ -96,6 +104,11 @@ async fn main() -> std::io::Result<()> {
                     .service(organisation::add_routes()),
             )
             .service(
+                web::scope("/organisation/user")
+                    .wrap(Auth { env: env.clone() })
+                    .service(organisation::user::add_routes()),
+            )
+            .service(
                 web::scope("/user")
                     .wrap(Auth { env: env.clone() })
                     .service(user::get_user),
@@ -106,7 +119,7 @@ async fn main() -> std::io::Result<()> {
                 // Decide if this needs auth; Ideally this only needs signature verfication
             )
     })
-    .bind(("127.0.0.1", 9000))?
+    .bind(("0.0.0.0", 9000))? // Listen on all interfaces
     .run()
     .await
 }
