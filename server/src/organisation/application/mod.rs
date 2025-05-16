@@ -17,9 +17,12 @@ use superposition_rust_sdk::models::{
 
 use crate::middleware::auth::{validate_user, AuthResponse, WRITE};
 use crate::types::AppState;
+use diesel::RunQueryDsl;
 
 use crate::utils::keycloak::get_token;
 use crate::utils::transaction_manager::TransactionManager;
+use crate::utils::db::schema::hyperotaserver::workspace_names;
+use crate::utils::db::models::{NewWorkspaceName, WorkspaceName};
 
 mod config;
 mod package;
@@ -135,7 +138,7 @@ where
     })
 }
 
-#[post("create")]
+#[post("/create")]
 async fn add_application(
     body: Json<ApplicationCreateRequest>,
     auth_response: ReqData<AuthResponse>,
@@ -160,6 +163,12 @@ async fn add_application(
 
     // Create a transaction manager to track resources
     let transaction = TransactionManager::new(&application, "application_create");
+
+    // Get DB connection
+    let mut conn = state.db_pool.get()
+        .map_err(|e| {
+            error::ErrorInternalServerError(format!("Failed to get database connection: {}", e))
+        })?;
 
     // Get Keycloak Admin Token
     let client = reqwest::Client::new();
@@ -305,28 +314,28 @@ async fn add_application(
             }
         }
 
-        // Step 3: Get organization from database
-        let mut conn = match state.db_pool.get() {
-            Ok(conn) => conn,
-            Err(e) => {
-                // Handle rollback and return error
-                if let Err(rollback_err) = transaction
-                    .handle_rollback_if_needed(&admin, &realm, &state)
-                    .await
-                {
-                    println!("Rollback failed: {}", rollback_err);
-                }
-
-                return Err(error::ErrorInternalServerError(format!(
-                    "Database connection error: {}",
-                    e
-                )));
-            }
+        // Store workspace name in our database with a placeholder, then update to "workspace{id}"
+        let new_workspace_name = NewWorkspaceName {
+            organization_id: &organisation,
+            workspace_name: "pending",
         };
 
         let superposition_org_id_from_env = state.env.superposition_org_id.clone();
         println!("Using Superposition Org ID from environment: {}", superposition_org_id_from_env);
+        // Insert and get the inserted row (to get the id)
+        let inserted_workspace: WorkspaceName = diesel::insert_into(workspace_names::table)
+            .values(&new_workspace_name)
+            .get_result(&mut conn)
+            .map_err(|e| error::ErrorInternalServerError(format!("Failed to store workspace name: {}", e)))?;
 
+        let generated_id = inserted_workspace.id;
+        let generated_workspace_name = format!("workspace{}", generated_id);
+
+        // Update the workspace_name to "workspace{id}"
+        diesel::update(workspace_names::table.filter(workspace_names::id.eq(generated_id)))
+            .set(workspace_names::workspace_name.eq(&generated_workspace_name))
+            .execute(&mut conn)
+            .map_err(|e| error::ErrorInternalServerError(format!("Failed to update workspace name: {}", e)))?;
 
         // Step 4: Create workspace in Superposition
         let workspace = match create_workspace(
@@ -334,7 +343,7 @@ async fn add_application(
             &superposition_org_id_from_env, // Use ID from env
             CreateWorkspaceRequestContent {
                 workspace_admin_email: "pp-sdk@juspay.in".to_string(),
-                workspace_name: application.clone(),
+                workspace_name: generated_workspace_name.clone(),
                 workspace_status: Some(WorkspaceStatus::Enabled),
                 workspace_strict_mode: false
             },
@@ -366,12 +375,12 @@ async fn add_application(
         // Step 5: Create default configurations
         let create_default_config_string = default_config::<String>(
             state.superposition_configuration.clone(),
-            workspace.workspace_name.clone(),
+            generated_workspace_name.clone(),
             superposition_org_id_from_env.clone(), // Use ID from env
         );
         let create_default_config_int = default_config::<i32>(
             state.superposition_configuration.clone(),
-            workspace.workspace_name.clone(),
+            generated_workspace_name.clone(),
             superposition_org_id_from_env.clone(), // Use ID from env
         );
 
@@ -452,10 +461,14 @@ async fn add_application(
         )
         .await?;
 
+        println!(
+            "Creating default configuration (string): key=package.name, value={}",
+            generated_workspace_name
+        );
         create_config_with_tx(
             create_default_config_string(
                 "package.name".to_string(),
-                workspace.workspace_name.clone(),
+                generated_workspace_name.clone(),
                 "Value indicating the version of the release config".to_string(),
             ),
             "package.name",

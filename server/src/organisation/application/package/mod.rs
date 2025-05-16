@@ -1,5 +1,4 @@
 use crate::utils::db::models::ConfigEntry;
-// use crate::utils::db::schema::hyperotaserver::organisations::dsl::*; // organisations table removed
 use crate::utils::db::schema::hyperotaserver::packages::dsl::*;
 use crate::{
     middleware::auth::{self, validate_user, AuthResponse, READ, WRITE},
@@ -8,14 +7,12 @@ use crate::{
         db::{
             models::{PackageEntry, PackageEntryRead},
             schema::hyperotaserver::{
-                // organisations, // organisations table removed
                 packages::{app_id, dsl::packages, org_id, version},
             },
         },
         s3::push_file,
     },
 };
-// use crate::{organisation::application::default_config, utils::db::models::OrgEnty}; // OrgEnty struct removed
 use actix_multipart::form::{tempfile::TempFile, text::Text, MultipartForm};
 use actix_web::{
     error::{self},

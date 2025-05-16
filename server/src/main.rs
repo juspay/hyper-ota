@@ -16,7 +16,6 @@ use dotenvy::dotenv;
 use middleware::auth::Auth;
 use reqwest::Client;
 use superposition_rust_sdk::apis::configuration::Configuration;
-use user::add_routes;
 use utils::{db, kms::decrypt_kms, transaction_manager::start_cleanup_job};
 
 #[actix_web::main]
