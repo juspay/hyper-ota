@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import react_native_hyperota
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -14,6 +15,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Initialize HyperOTA before React Native
+    initializeHyperOTA()
+    
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -24,12 +28,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "ExampleProject",
+      withModuleName: "HyperotaExample",
       in: window,
       launchOptions: launchOptions
     )
 
     return true
+  }
+  
+  private func initializeHyperOTA() {
+    let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    
+    Hyperota.initializeHyperOTA(
+      withAppId: "hyperota-example-app",
+      indexFileName: "main.jsbundle",
+      appVersion: appVersion,
+      releaseConfigTemplateUrl: "https://example.com/hyperota/release-config",
+      headers: [
+        "X-App-Version": appVersion,
+        "X-Platform": "iOS"
+      ]
+    )
+    
+    print("HyperOTA: Initialized successfully")
   }
 }
 

@@ -9,14 +9,14 @@ import org.json.JSONObject
 
 @Keep
 class HyperOTAReact private constructor(
-  context: Context,
-  appId: String,
-  private val indexFileName: String,
-  appVersion: String,
-  releaseConfigTemplateUrl: String,
-  headers: Map<String, String>? = null,
-  lazyDownloadCallback: LazyDownloadCallback,
-  trackerCallback: TrackerCallback = defaultTrackerCallback
+    context: Context,
+    appId: String,
+    private val indexFileName: String,
+    appVersion: String,
+    releaseConfigTemplateUrl: String,
+    headers: Map<String, String>? = null,
+    lazyDownloadCallback: LazyDownloadCallback,
+    trackerCallback: TrackerCallback = defaultTrackerCallback
 ) {
     private val hyperOTAServices = HyperOTAServices(
         context,
@@ -33,8 +33,6 @@ class HyperOTAReact private constructor(
     init {
         applicationManager.loadApplication(appId, lazyDownloadCallback)
     }
-
-
 
     /**
      * @return The path of the index bundle, or asset path fallback if empty.
@@ -80,44 +78,56 @@ class HyperOTAReact private constructor(
          */
         @JvmStatic
         fun init(
-          context: Context,
-          appId: String,
-          indexFileName: String,
-          appVersion: String,
-          releaseConfigTemplateUrl: String,
-          headers: Map<String, String>? = null,
-          lazyDownloadCallback: LazyDownloadCallback? = null,
-          trackerCallback: TrackerCallback? = null
-          ) {
-          initializer = {
-            HyperOTAReact(
-              context,
-              appId,
-              indexFileName,
-              appVersion,
-              releaseConfigTemplateUrl,
-              headers,
-                lazyDownloadCallback ?: defaultLazyCallback,
-                trackerCallback ?: defaultTrackerCallback
-            )
-          }
+            context: Context,
+            appId: String,
+            indexFileName: String,
+            appVersion: String,
+            releaseConfigTemplateUrl: String,
+            headers: Map<String, String>? = null,
+            lazyDownloadCallback: LazyDownloadCallback? = null,
+            trackerCallback: TrackerCallback? = null
+        ) {
+            initializer = {
+                HyperOTAReact(
+                    context,
+                    appId,
+                    indexFileName,
+                    appVersion,
+                    releaseConfigTemplateUrl,
+                    headers,
+                    lazyDownloadCallback ?: defaultLazyCallback,
+                    trackerCallback ?: defaultTrackerCallback
+                )
+            }
         }
 
-      val defaultLazyCallback = object : LazyDownloadCallback {
-        override fun fileInstalled(filePath: String, success: Boolean) {
-          TODO("Not yet implemented")
-        }
+        /**
+         * Default LazyDownloadCallback implementation.
+         */
+        private val defaultLazyCallback = object : LazyDownloadCallback {
+            override fun fileInstalled(filePath: String, success: Boolean) {
+                // Default implementation: log the file installation status
+                if (success) {
+                    println("HyperOTAReact: File installed successfully: $filePath")
+                } else {
+                    println("HyperOTAReact: File installation failed: $filePath")
+                }
+            }
 
-        override fun lazySplitsInstalled(success: Boolean) {
-          TODO("Not yet implemented")
+            override fun lazySplitsInstalled(success: Boolean) {
+                // Default implementation: log the lazy splits installation status
+                if (success) {
+                    println("HyperOTAReact: Lazy splits installed successfully")
+                } else {
+                    println("HyperOTAReact: Lazy splits installation failed")
+                }
+            }
         }
-
-      }
 
         /**
          * Default no-op TrackerCallback.
          */
-         val defaultTrackerCallback = object : TrackerCallback() {
+        private val defaultTrackerCallback = object : TrackerCallback() {
             override fun track(
                 category: String,
                 subCategory: String,

@@ -1,12 +1,19 @@
-// const path = require('path');
-// const pkg = require('../package.json');
 const path = require('path');
-const pak = require('../package.json');
+const pkg = require('../package.json');
 
 module.exports = {
+  project: {
+    ios: {
+      automaticPodsInstallation: true,
+    },
+  },
   dependencies: {
-    [pak.name]: {
+    [pkg.name]: {
       root: path.join(__dirname, '..'),
+      platforms: {
+        ios: {},
+        android: {},
+      },
     },
   },
 };

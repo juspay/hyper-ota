@@ -3,7 +3,19 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "react-native-hyper-ota": ["../hyper-ota/react-plugin/src/index.tsx"]
+      "react-native-hyperota": ["../src/index"]
     }
-  }
+  },
+  "include": [
+    "src/**/*",
+    "*.js",
+    "*.ts",
+    "*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js"
+  ]
 }

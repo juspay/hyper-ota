@@ -1,12 +1,17 @@
-
 #ifdef RCT_NEW_ARCH_ENABLED
-#import "RNHyperOtaSpec.h"
+#import <HyperotaSpec/HyperotaSpec.h>
 
-@interface HyperOta : NSObject <NativeHyperOtaSpec>
+@interface Hyperota : NSObject <NativeHyperotaSpec>
 #else
 #import <React/RCTBridgeModule.h>
 
-@interface HyperOta : NSObject <RCTBridgeModule>
+@interface Hyperota : NSObject <RCTBridgeModule>
 #endif
+
++ (void)initializeHyperOTAWithAppId:(NSString *)appId
+                       indexFileName:(NSString *)indexFileName
+                          appVersion:(NSString *)appVersion
+             releaseConfigTemplateUrl:(NSString *)releaseConfigTemplateUrl
+                             headers:(nullable NSDictionary<NSString *, NSString *> *)headers;
 
 @end

@@ -1,14 +1,12 @@
 package com.hyperota
 
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
-import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
 import com.facebook.react.module.annotations.ReactModule
 
-@ReactModule(name = HyperotaModule.NAME)
-class HyperotaModule(reactContext: ReactApplicationContext) :
-  ReactContextBaseJavaModule(reactContext) {
+@ReactModule(name = HyperotaTurboModule.NAME)
+class HyperotaTurboModule(reactContext: ReactApplicationContext) :
+  NativeHyperotaSpec(reactContext) {
   
   private val implementation = HyperotaModuleImpl(reactContext)
 
@@ -16,18 +14,15 @@ class HyperotaModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
-  @ReactMethod
-  fun readReleaseConfig(promise: Promise) {
+  override fun readReleaseConfig(promise: Promise) {
     implementation.readReleaseConfig(promise)
   }
 
-  @ReactMethod
-  fun getFileContent(filePath: String, promise: Promise) {
+  override fun getFileContent(filePath: String, promise: Promise) {
     implementation.getFileContent(filePath, promise)
   }
 
-  @ReactMethod
-  fun getBundlePath(promise: Promise) {
+  override fun getBundlePath(promise: Promise) {
     implementation.getBundlePath(promise)
   }
 

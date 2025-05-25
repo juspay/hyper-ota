@@ -2,7 +2,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "react-native-hyper-ota": ["./src/index"]
+      "react-native-hyperota": ["./src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
@@ -11,7 +11,7 @@
     "jsx": "react-jsx",
     "lib": ["ESNext"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
