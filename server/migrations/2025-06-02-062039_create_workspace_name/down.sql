@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS hyperotaserver.workspace_names;

@@ -3,10 +3,12 @@ use diesel::deserialize::Queryable;
 use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::sql_types::Json;
+use serde::{Deserialize, Serialize};
 
 use crate::utils::db::schema::hyperotaserver::{
-    cleanup_outbox, configs, packages, releases,
+    cleanup_outbox, configs, packages, releases, workspace_names
 };
+
 
 #[derive(Insertable, Debug)]
 #[diesel(table_name = packages)]
@@ -73,4 +75,21 @@ pub struct ReleaseEntry {
     pub created_by: String,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub metadata: serde_json::Value,
+}
+
+#[derive(Queryable, Selectable, Serialize, Deserialize, Debug)]
+#[diesel(table_name = workspace_names)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct WorkspaceName {
+    pub id: i32,
+    pub organization_id: String,
+    pub workspace_name: String,
+    // pub created_at: DateTime<Utc>,
+}
+
+#[derive(Insertable, Selectable)]
+#[diesel(table_name = workspace_names)]
+pub struct NewWorkspaceName<'a> {
+    pub organization_id: &'a str,
+    pub workspace_name: &'a str,
 }

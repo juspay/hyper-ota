@@ -54,10 +54,19 @@ pub mod hyperotaserver {
         }
     }
 
+    diesel::table! {
+        hyperotaserver.workspace_names (id) {
+            id -> Int4,
+            organization_id -> Text,
+            workspace_name -> Text,
+        }
+    }
+
     diesel::allow_tables_to_appear_in_same_query!(
         cleanup_outbox,
         configs,
         packages,
         releases,
+        workspace_names,
     );
 }
