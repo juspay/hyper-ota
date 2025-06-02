@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  @keyframes glow-breathe {
+    0%, 100% { /* Max glow when logo is at bottom */
+      transform: scale(1.1); 
+      opacity: 0.9;
+    }
+    50% { /* Min glow when logo is at top */
+      transform: scale(1);   
+      opacity: 0.6;
+    }
+  }
+  
+  @keyframes logo-float {
+    0%, 100% { 
+      transform: translateY(0px);
+    }
+    50% { 
+      transform: translateY(-8px); /* Increased bounce height */
+    }
+  }
+  
+  @keyframes sparkle-rotate {
+    from { 
+      transform: rotate(0deg);
+    }
+    to { 
+      transform: rotate(360deg);
+    }
+  }
+  
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+}
+
+@layer utilities {
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+}

@@ -14,17 +14,26 @@ pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 pub async fn get_database_url(kms_client: &Client) -> String {
     let db_user: String = env::var("DB_USER").expect("DB_USER must be set");
+
+    // Check if DATABASE_URL is set - use it directly if available for local development
+    if let Ok(database_url) = env::var("DATABASE_URL") {
+        return database_url;
+    }
+
     let x = decrypt_kms(
         kms_client,
         env::var("DB_PASSWORD").expect("DB_PASSWORD must be set"),
     )
     .await;
+
     let db_password = encode(&x);
 
     let db_host: String = env::var("DB_HOST").expect("DB_HOST must be set");
-    let db_name: String = env::var("DB_NAME").expect("DB_HOST must be set");
+    let db_name: String = env::var("DB_NAME").expect("DB_NAME must be set");
 
-    format!("postgres://{db_user}:{db_password}@{db_host}/{db_name}")
+    let url = format!("postgres://{db_user}:{db_password}@{db_host}/{db_name}");
+
+    url
 }
 
 // Function to create a new connection pool
@@ -35,9 +44,24 @@ pub async fn establish_pool(kms_client: &Client) -> DbPool {
         .parse()
         .expect("DATABASE_POOL_SIZE must be a valid number");
 
+    println!(
+        "Creating database pool with max_connections: {}",
+        max_connections
+    );
+
     let manager = ConnectionManager::<PgConnection>::new(database_url);
-    Pool::builder()
-        .max_size(max_connections) // Set max connections (adjust as needed)
-        .build(manager)
-        .expect("Failed to create DB pool")
+
+    match Pool::builder().max_size(max_connections).build(manager) {
+        Ok(pool) => {
+            // Test the connection
+            match pool.get() {
+                Ok(_) => println!("Successfully connected to the database"),
+                Err(e) => println!("Warning: Could not get a test connection: {}", e),
+            }
+            pool
+        }
+        Err(e) => {
+            panic!("Failed to create DB pool: {}", e);
+        }
+    }
 }

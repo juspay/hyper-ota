@@ -1,0 +1,30 @@
+# Exclude build artifacts
+target/
+**/target/
+
+# Exclude git files
+.git/
+.github/
+.gitignore
+
+# Exclude editor configs
+.vscode/
+.idea/
+
+# Exclude Node.js modules
+node_modules/
+**/node_modules/
+
+# Exclude environment files
+.env*
+!.env.example
+
+# Exclude temporary files
+**/*.rs.bk
+**/*.swp
+
+# Exclude large unnecessary files
+**/*.apk
+**/*.pem
+**/*.p12
+**/*.keystore

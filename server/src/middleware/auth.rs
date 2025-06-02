@@ -52,13 +52,13 @@ pub struct AuthMiddleware<S> {
     env: Environment,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AccessLevel {
     pub name: String,
     pub level: u8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AuthResponse {
     pub sub: String,
     pub admin_token: KeycloakAdminToken, // This is holding token and not admin since admin deos not have clone
@@ -67,13 +67,14 @@ pub struct AuthResponse {
 }
 
 pub struct Access {
-    access: u8,
+    pub access: u8,
 }
 
 pub const OWNER: Access = Access { access: 4 };
 pub const ADMIN: Access = Access { access: 3 };
 pub const WRITE: Access = Access { access: 2 };
 pub const READ: Access = Access { access: 1 };
+pub const ROLES: [&str; 4] = ["owner", "admin", "write", "read"];
 
 pub fn validate_user(access_level: Option<AccessLevel>, access: Access) -> Result<String, String> {
     if let Some(access_level) = access_level {
@@ -88,11 +89,11 @@ pub fn validate_user(access_level: Option<AccessLevel>, access: Access) -> Resul
 }
 
 fn get_access_level(user_groups: &Vec<String>, path: &str) -> Option<usize> {
-    let access_list = ["owner", "admin", "write", "read"];
-    access_list.iter().enumerate().find_map(|(i, role)| {
+    static ACCESS_LIST: [&str; 4] = ["owner", "admin", "write", "read"];
+    ACCESS_LIST.iter().enumerate().find_map(|(i, role)| {
         let full_path = format!("/{}/{}", path, role); // match format of a
         if user_groups.contains(&full_path) {
-            Some(access_list.len() - i)
+            Some(ACCESS_LIST.len() - i)
         } else {
             None
         }
@@ -129,7 +130,7 @@ where
             match token {
                 Ok(token) => match auth {
                     Some(auth) => {
-                        let token_data = decode_jwt_token(auth, &env.keycloak_public_key.clone());
+                        let token_data = decode_jwt_token(auth, &env.keycloak_public_key.clone(), &env.client_id.clone());
                         match token_data {
                             Ok(token_data) => {
                                 let mut organisation = None;
@@ -209,4 +210,57 @@ where
             }
         })
     }
+}
+
+impl AccessLevel {
+    pub fn from_str(access: &str) -> Option<Self> {
+        match access.to_lowercase().as_str() {
+            "read" => Some(AccessLevel {
+                name: "read".to_string(),
+                level: READ.access,
+            }),
+            "write" => Some(AccessLevel {
+                name: "write".to_string(),
+                level: WRITE.access,
+            }),
+            "admin" => Some(AccessLevel {
+                name: "admin".to_string(),
+                level: ADMIN.access,
+            }),
+            "owner" => Some(AccessLevel {
+                name: "owner".to_string(),
+                level: OWNER.access,
+            }),
+            _ => None,
+        }
+    }
+
+    pub fn is_admin_or_higher(&self) -> bool {
+        self.level >= ADMIN.access
+    }
+}
+
+pub async fn validate_required_access(
+    auth: &AuthResponse,
+    required_level: u8,
+    operation: &str,
+) -> Result<(), String> {
+    if let Some(access) = &auth.organisation {
+        if access.level >= required_level {
+            Ok(())
+        } else {
+            Err(format!("Insufficient permissions for {}", operation))
+        }
+    } else {
+        Err("No organization access".to_string())
+    }
+}
+
+pub fn get_access_levels() -> [(String, u8); 4] {
+    [
+        ("read".to_string(), READ.access),
+        ("write".to_string(), WRITE.access),
+        ("admin".to_string(), ADMIN.access),
+        ("owner".to_string(), OWNER.access),
+    ]
 }

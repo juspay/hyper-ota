@@ -1,0 +1,249 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: hyper-ota-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hyperotaserver
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  keycloak-db:
+    image: postgres:15
+    container_name: keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5434:5432"
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    build:
+      context: .
+      dockerfile: keycloak.Dockerfile
+    container_name: keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "8180:8080"
+      - "9000:9000"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    command:
+      - start-dev
+      - --import-realm
+      - --health-enabled=true
+      - --metrics-enabled=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/realms/master"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.keycloak-init
+    depends_on:
+      keycloak:
+        condition: service_started
+    volumes:
+      - ./scripts:/scripts
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo 'Starting init'
+        /bin/sh /scripts/keycloak.sh 2>&1
+    environment:
+      KEYCLOAK_HOST: http://keycloak:8080
+      KEYCLOAK_REALM: hyperOTA
+      CLIENT_ID: hyperota
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+
+  superposition-org-init:
+    image: alpine/curl # Contains curl, jq might need to be added or use a different image like stedolan/jq
+    container_name: superposition-org-init
+    command: >
+      sh -c "apk add --no-cache jq &&
+             chmod +x /scripts/init-superposition-org.sh &&
+             /scripts/init-superposition-org.sh"
+    volumes:
+      - ./scripts:/scripts
+      - init-data:/init-data # Shared volume to pass the env file
+    environment:
+      SUPERPOSITION_URL: ${SUPERPOSITION_URL:-http://host.docker.internal:8080} # Points to the host from inside a container on Docker Desktop
+      SUPERPOSITION_DEFAULT_ORG_NAME: "DefaultHyperOTAOrg"
+      SUPERPOSITION_ORG_ID_FILE: "/init-data/superposition_org.env" # Corrected path
+    # depends_on:
+      # superposition: # If superposition was a service defined in this compose file
+        # condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ${ENVIRONMENT:-prod} # Use 'dev' or 'prod' target from Dockerfile
+    container_name: hyper-ota-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak-init:
+        condition: service_completed_successfully
+      localstack-init:
+        condition: service_completed_successfully
+      superposition-org-init: # Depends on the new init service
+        condition: service_completed_successfully
+    ports:
+      - "8081:9000"
+    environment:
+      # Database settings
+      DB_USER: ${DB_USER:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-hyperotaserver}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-2}
+
+      # Superposition Org ID will be sourced by backend-entrypoint.sh
+
+      # Keycloak settings
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-hyperOTA}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-hyperota}
+
+      # AWS settings
+      AWS_BUCKET: ${AWS_BUCKET:-test}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+
+      # Additional service URLs
+      SUPERPOSITION_URL: ${SUPERPOSITION_URL:-http://host.docker.internal:8080}
+      PUBLIC_ENDPOINT: ${PUBLIC_ENDPOINT:-http://localhost:5000}
+
+    env_file:
+      - ./scripts/.env.encrypted # Keep this for other static env vars
+      # - /init-data/superposition_org.env # Removed, will be sourced by entrypoint
+    volumes:
+      - ./scripts:/scripts # For backend-entrypoint.sh
+      - init-data:/init-data:ro 
+      - ./scripts/.env.encrypted:/app/.env.encrypted:ro 
+      - target_cache:/app/target
+    entrypoint: /scripts/backend-entrypoint.sh
+    # When target is 'dev', the command should be what the dev stage expects.
+    # The Dockerfile's dev stage CMD is ["cargo", "watch", "-x", "run"].
+    # This will be passed as arguments to backend-entrypoint.sh.
+    command: ["cargo", "watch", "-x", "run"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        - action: sync+restart
+          path: ./Cargo.toml
+          target: /app/Cargo.toml
+        - action: sync+restart
+          path: ./Cargo.lock
+          target: /app/Cargo.lock
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: hyper-ota-localstack
+    # Add persistent volume for LocalStack data
+    volumes:
+      - ./localstack-data:/var/lib/localstack
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    environment:
+      - SERVICES=kms,s3
+      - DEBUG=1
+      - PERSISTENCE=1 # Enable persistence
+      - DATA_DIR=/var/lib/localstack/data
+    healthcheck:
+      # Check specific services that we need (kms and s3)
+      test: >-
+        awslocal kms list-keys &&
+        awslocal s3 ls
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  localstack-init:
+    image: localstack/localstack:latest # Using LocalStack image which has awslocal
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - ./scripts:/scripts
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: ["/bin/bash", "-c"]
+    command: [
+        "/scripts/localstack-init/init-aws.sh &&
+        echo 'Running encrypt_env.sh...' &&
+        cd /scripts &&
+        chmod +x encrypt_env.sh &&
+        bash -x encrypt_env.sh &&
+        cat .env.encrypted &&
+        sync &&
+        echo 'Initialization complete - files are synced'",
+      ]
+
+  frontend:
+    image: node:20-alpine 
+    container_name: hyper-ota-frontend
+    working_dir: /app/dashboard_react
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - "5173:5173" 
+    volumes:
+      - ./dashboard_react:/app/dashboard_react 
+      - /app/dashboard_react/node_modules 
+    command: sh -c "npm install && npm run dev"
+
+volumes:
+  postgres_data:
+  keycloak_postgres_data:
+  target_cache:
+  cargo_cache:
+  init-data: # Define the shared volume
