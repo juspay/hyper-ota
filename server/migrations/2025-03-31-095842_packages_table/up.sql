@@ -1,5 +1,5 @@
 -- This is required for gen_random_uuid
-CREATE EXTENSION pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Your SQL goes here
 CREATE TABLE hyperotaserver.packages (

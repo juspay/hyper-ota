@@ -37,6 +37,7 @@ thiserror = "2.0.12"
 log = "0.4.27"
 chrono = "0.4.41"
 tracing = "0.1.41"
+diesel_migrations = "2.2"
 
 [dev-dependencies]
 mockall = "0.11.4"

@@ -10,6 +10,13 @@ use crate::utils::db::schema::hyperotaserver::{
 };
 
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct File {
+    pub url: String,
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+}
+
 #[derive(Insertable, Debug)]
 #[diesel(table_name = packages)]
 pub struct PackageEntry {
@@ -19,7 +26,12 @@ pub struct PackageEntry {
     pub index: String,
     pub version_splits: bool,
     pub use_urls: bool,
-    pub contents: Vec<Option<String>>,
+    pub important: serde_json::Value,
+    pub lazy: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub properties: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub resources: serde_json::Value,
 }
 
 #[derive(Queryable, Selectable, Debug)]
@@ -32,7 +44,12 @@ pub struct PackageEntryRead {
     pub index: String,
     pub version_splits: bool,
     pub use_urls: bool,
-    pub contents: Vec<Option<String>>,
+    pub important: serde_json::Value,
+    pub lazy: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub properties: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub resources: serde_json::Value,
 }
 
 #[derive(Queryable, Insertable, Debug, Selectable)]

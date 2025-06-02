@@ -131,6 +131,7 @@ services:
     environment:
       # Database settings
       DB_USER: ${DB_USER:-postgres}
+      DB_MIGRATION_USER: ${DB_MIGRATION_USER:-postgres}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-hyperotaserver}

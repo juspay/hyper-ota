@@ -1,6 +1,6 @@
 import { User, LogOut } from "lucide-react";
 import { useState } from "react";
-import smallLogoImage from '../assets/hyperota-cube-logo2.png'; // Assuming this is the correct path
+import smallLogoImage from '../assets/hyperota-cube-logo.png'; // Assuming this is the correct path
 
 interface HeaderProps {
   userName: string;

@@ -114,6 +114,7 @@ KEYCLOAK_CLIENT_ID=${CLIENT_ID}
 KEYCLOAK_SECRET=${CLIENT_SECRET}
 KEYCLOAK_PUBLIC_KEY=${PUBLIC_KEY}
 DB_PASSWORD=postgres
+DB_MIGRATION_PASSWORD=postgres
 EOF
 
 # Create environment file in scripts directory too (for redundancy)
@@ -124,6 +125,7 @@ KEYCLOAK_CLIENT_ID=${CLIENT_ID}
 KEYCLOAK_SECRET=${CLIENT_SECRET}
 KEYCLOAK_PUBLIC_KEY=${PUBLIC_KEY}
 DB_PASSWORD=postgres
+DB_MIGRATION_PASSWORD=postgres
 EOF
 
 echo "✅ Keycloak environment variables saved to .env.keycloak"

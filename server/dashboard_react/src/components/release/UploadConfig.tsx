@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Save, X, Settings } from "lucide-react";
+import { Upload, Save, X, Settings, Copy, Check } from "lucide-react";
 import { Application, Organisation } from "../../types";
 import axios from "../../api/axios";
 
@@ -25,6 +25,7 @@ export default function UploadConfig({
   const [errorMessage, setErrorMessage] = useState("Please enter JSON data");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -121,6 +122,35 @@ export default function UploadConfig({
         }
       };
       reader.readAsText(file);
+    }
+  };
+
+  const handleCopyExample = async () => {
+    const exampleJson = `{
+  "config": {
+    "version": "1.0.0",
+    "release_config_timeout": 1000,
+    "package_timeout": 1000,
+    "properties": {
+      "tenant_info": {
+        "assets_domain": "https://assets.example.com",
+        "default_client_id": "client123"
+      }
+    }
+  },
+  "tenant_info": {
+    "assets_domain": "https://assets.example.com",
+    "default_client_id": "client123"
+  },
+  "properties": {}
+}`;
+
+    try {
+      await navigator.clipboard.writeText(exampleJson);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
     }
   };
 
@@ -259,8 +289,20 @@ export default function UploadConfig({
                   Configuration JSON Format Example
                 </summary>
                 <div className="px-6 pb-6">
-                  <pre className="p-4 text-xs text-white/70 overflow-x-auto bg-black/30 rounded-lg border border-white/10">
-                    {`{
+                  <div className="relative">
+                    <button
+                      onClick={handleCopyExample}
+                      className="absolute top-2 right-2 p-2 text-white/60 hover:text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 z-10"
+                      title={isCopied ? "Copied!" : "Copy example"}
+                    >
+                      {isCopied ? (
+                        <Check size={16} className="text-green-400" />
+                      ) : (
+                        <Copy size={16} />
+                      )}
+                    </button>
+                    <pre className="p-4 text-xs text-white/70 overflow-x-auto bg-black/30 rounded-lg border border-white/10">
+                      {`{
   "config": {
     "version": "1.0.0",
     "release_config_timeout": 1000,
@@ -278,7 +320,8 @@ export default function UploadConfig({
   },
   "properties": {}
 }`}
-                  </pre>
+                    </pre>
+                  </div>
                 </div>
               </details>
             </div>

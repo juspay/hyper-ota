@@ -37,7 +37,10 @@ pub mod hyperotaserver {
             index -> Text,
             version_splits -> Bool,
             use_urls -> Bool,
-            contents -> Array<Nullable<Text>>,
+            important -> Jsonb,
+            lazy -> Jsonb,
+            properties -> Jsonb,
+            resources -> Jsonb,
         }
     }
 

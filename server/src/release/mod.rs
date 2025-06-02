@@ -7,15 +7,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use superposition_rust_sdk::apis::default_api::get_resolved_config;
 
-use crate::utils::db::schema::hyperotaserver::configs::dsl::{
+use crate::utils::{db::schema::hyperotaserver::configs::dsl::{
     app_id as config_app_id, configs as configs_table, org_id as config_org_id,
     version as config_version,
-};
+}, workspace::get_workspace_name_for_application};
 use crate::{
     types::AppState,
     utils::db::{
         models::{ConfigEntry, PackageEntryRead},
-        schema::hyperotaserver::configs,
     },
 };
 
@@ -70,13 +69,22 @@ struct InnerPackage {
     version: i32,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
+struct File {
+    url: String,
+    #[serde(rename = "filePath")]
+    file_path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct Package {
     name: String,
     version: String,
-    properties: PackagePropertiesV1,
+    #[serde(flatten)]
+    properties: serde_json::Value,
     index: String,
-    splits: Vec<String>,
+    important: Vec<File>,
+    lazy: Vec<File>,
 }
 
 fn decode_to_config(value: Value) -> Result<PackageMeta> {
@@ -238,48 +246,81 @@ async fn serve_release(
 
     println!("package_data : {:?}", package_data);
 
-    let mut splits = package_data
-        .contents
-        .iter()
-        .filter_map(|s| s.clone())
-        .collect::<Vec<String>>();
-    let mut package_index = package_data.index.clone();
-    if !package_data.use_urls {
-        splits = package_data
-            .contents
-            .iter()
-            .filter_map(|opt_file_name| {
-                opt_file_name.as_ref().map(|file_name| {
-                    if package_data.version_splits {
-                        format!(
-                            "{}/assets/{}/{}/{}/{}",
-                            &state.env.public_url,
-                            &package_data.org_id,
-                            &package_data.app_id,
-                            package_data.version,
-                            file_name
-                        )
-                    } else {
-                        format!(
-                            "{}/assets/{}/{}/{}",
-                            &state.env.public_url,
-                            &package_data.org_id,
-                            &package_data.app_id,
-                            file_name
-                        )
-                    }
-                })
-            })
-            .collect::<Vec<String>>();
-        package_index = format!(
+    // Convert important and lazy files from JSON back to Vec<File>
+    let important_files: Vec<crate::utils::db::models::File> = 
+        serde_json::from_value(package_data.important.clone()).unwrap_or_default();
+    let lazy_files: Vec<crate::utils::db::models::File> = 
+        serde_json::from_value(package_data.lazy.clone()).unwrap_or_default();
+    
+    // If not using URLs, construct full URLs for the files
+    let final_important_files = if !package_data.use_urls {
+        important_files.iter().map(|file| {
+            crate::utils::db::models::File {
+                url: if package_data.version_splits {
+                    format!(
+                        "{}/assets/{}/{}/{}/{}",
+                        &state.env.public_url,
+                        &package_data.org_id,
+                        &package_data.app_id,
+                        package_data.version,
+                        file.file_path
+                    )
+                } else {
+                    format!(
+                        "{}/assets/{}/{}/{}",
+                        &state.env.public_url,
+                        &package_data.org_id,
+                        &package_data.app_id,
+                        file.file_path
+                    )
+                },
+                file_path: file.file_path.clone(),
+            }
+        }).collect()
+    } else {
+        important_files
+    };
+
+    let final_lazy_files = if !package_data.use_urls {
+        lazy_files.iter().map(|file| {
+            crate::utils::db::models::File {
+                url: if package_data.version_splits {
+                    format!(
+                        "{}/assets/{}/{}/{}/{}",
+                        &state.env.public_url,
+                        &package_data.org_id,
+                        &package_data.app_id,
+                        package_data.version,
+                        file.file_path
+                    )
+                } else {
+                    format!(
+                        "{}/assets/{}/{}/{}",
+                        &state.env.public_url,
+                        &package_data.org_id,
+                        &package_data.app_id,
+                        file.file_path
+                    )
+                },
+                file_path: file.file_path.clone(),
+            }
+        }).collect()
+    } else {
+        lazy_files
+    };
+
+    let package_index = if !package_data.use_urls {
+        format!(
             "{}/assets/{}/{}/{}/{}",
             &state.env.public_url,
             &package_data.org_id,
             &package_data.app_id,
             package_data.version,
             package_data.index
-        );
-    }
+        )
+    } else {
+        package_data.index.clone()
+    };
 
     Ok(Json(ReleaseConfig {
         config: Config {
@@ -293,22 +334,21 @@ async fn serve_release(
         package: Package {
             name: package_data.app_id,
             version: packages_meta.package.version.to_string(),
-            properties: PackagePropertiesV1 {
-                manifest: json!({}),
-                manifest_hash: json!({}),
-            },
+            properties: package_data.properties.clone(),
             index: package_index,
-            splits,
+            important: final_important_files.iter().map(|f| File {
+                url: f.url.clone(),
+                file_path: f.file_path.clone(),
+            }).collect(),
+            lazy: final_lazy_files.iter().map(|f| File {
+                url: f.url.clone(),
+                file_path: f.file_path.clone(),
+            }).collect(),
         },
-        resources: json!({}),
+        resources: package_data.resources,
     }))
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct PackagePropertiesV1 {
-    manifest: serde_json::Value,
-    manifest_hash: serde_json::Value,
-}
 
 #[get("v2/{organisation}/{application}")]
 async fn serve_release_v2(
@@ -328,10 +368,13 @@ async fn serve_release_v2(
 
     let superposition_org_id_from_env = state.env.superposition_org_id.clone();
 
+    let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await
+        .map_err(|e| error::ErrorInternalServerError(format!("Failed to get workspace name: {}", e)))?;
+
     let config = get_resolved_config(
         &state.superposition_configuration,
         &superposition_org_id_from_env,
-        &application,
+        &workspace_name,
         None,
         None,
         None,
@@ -382,6 +425,12 @@ async fn serve_release_v2(
         .first::<ConfigEntry>(&mut conn)
         .map_err(|_| error::ErrorNotFound("Config not found"))?;
 
+    // Convert important and lazy files from JSON back to Vec<File>
+    let important_files: Vec<File> = 
+        serde_json::from_value(package_data.important.clone()).unwrap_or_default();
+    let lazy_files: Vec<File> = 
+        serde_json::from_value(package_data.lazy.clone()).unwrap_or_default();
+
     Ok(Json(ReleaseConfig {
         config: Config {
             version: config_data.config_version,
@@ -394,25 +443,11 @@ async fn serve_release_v2(
         package: Package {
             name: package_data.app_id,
             version: config_data.version.to_string(),
-            properties: PackagePropertiesV1 {
-                manifest: config_data
-                    .properties
-                    .get("manifest")
-                    .cloned()
-                    .unwrap_or_default(),
-                manifest_hash: config_data
-                    .properties
-                    .get("manifest_hash")
-                    .cloned()
-                    .unwrap_or_default(),
-            },
+            properties: config_data.properties.clone(),
             index: package_data.index,
-            splits: package_data
-                .contents
-                .iter()
-                .filter_map(|s| s.clone())
-                .collect(),
+            important: important_files,
+            lazy: lazy_files,
         },
-        resources: json!({}),
+        resources: package_data.resources,
     }))
 }

@@ -5,7 +5,7 @@ import CreateApplication from "./organization/CreateApplication";
 import ApplicationDetails from "./organization/ApplicationDetails";
 import { useNavigate } from "react-router-dom";
 import { Plus, ChevronRight, Trash2, Building2, Users, Zap } from "lucide-react";
-import smallLogoImage from '../assets/hyperota-cube-logo2.png';
+import smallLogoImage from '../assets/hyperota-cube-logo.png';
 import axios from "../api/axios"; 
 
 // Types

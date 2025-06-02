@@ -27,7 +27,14 @@ interface ReleaseConfig {
       manifest_hash: Record<string, any>;
     };
     index: string;
-    splits: string[];
+    important: Array<{
+      url: string;
+      file_path: string;
+    }>;
+    lazy: Array<{
+      url: string;
+      file_path: string;
+    }>;
   };
 }
 
@@ -261,8 +268,12 @@ const Release: React.FC = () => {
               <p className="text-white font-mono text-sm break-all">{releaseData.package.index}</p>
             </div>
             <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <h4 className="text-sm font-semibold text-white/80 mb-2">Splits Count</h4>
-              <p className="text-white text-lg font-semibold">{releaseData.package.splits.length}</p>
+              <h4 className="text-sm font-semibold text-white/80 mb-2">Important Files Count</h4>
+              <p className="text-white text-lg font-semibold">{releaseData.package.important.length}</p>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <h4 className="text-sm font-semibold text-white/80 mb-2">Lazy Files Count</h4>
+              <p className="text-white text-lg font-semibold">{releaseData.package.lazy.length}</p>
             </div>
             <div className="bg-white/5 rounded-xl p-4 border border-white/10 sm:col-span-2 lg:col-span-1">
               <h4 className="text-sm font-semibold text-white/80 mb-2">Timeout (Config)</h4>
@@ -270,16 +281,33 @@ const Release: React.FC = () => {
             </div>
           </div>
 
-          {/* Splits Information */}
-          {releaseData.package.splits.length > 0 && (
+          {/* Important Files Information */}
+          {releaseData.package.important.length > 0 && (
             <div className="mt-6">
-              <h4 className="text-base sm:text-lg font-semibold text-white mb-3">Splits</h4>
+              <h4 className="text-base sm:text-lg font-semibold text-white mb-3">Important Files</h4>
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                 <div className="space-y-2">
-                  {releaseData.package.splits.map((split, index) => (
+                  {releaseData.package.important.map((file, index) => (
                     <div key={index} className="flex items-center justify-between py-2 border-b border-white/10 last:border-b-0">
-                      <span className="text-white/60 text-sm">Split {index + 1}</span>
-                      <code className="text-white font-mono text-sm bg-white/10 px-2 py-1 rounded break-all">{split}</code>
+                      <span className="text-white/60 text-sm">File {index + 1}</span>
+                      <code className="text-white font-mono text-sm bg-white/10 px-2 py-1 rounded break-all">{file.file_path}</code>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lazy Files Information */}
+          {releaseData.package.lazy.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-base sm:text-lg font-semibold text-white mb-3">Lazy Files</h4>
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <div className="space-y-2">
+                  {releaseData.package.lazy.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between py-2 border-b border-white/10 last:border-b-0">
+                      <span className="text-white/60 text-sm">File {index + 1}</span>
+                      <code className="text-white font-mono text-sm bg-white/10 px-2 py-1 rounded break-all">{file.file_path}</code>
                     </div>
                   ))}
                 </div>

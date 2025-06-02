@@ -1,7 +1,6 @@
-use crate::utils::db::models::ConfigEntry;
-use crate::utils::db::schema::hyperotaserver::packages::dsl::*;
+use crate::utils::workspace::get_workspace_name_for_application;
 use crate::{
-    middleware::auth::{self, validate_user, AuthResponse, READ, WRITE},
+    middleware::auth::{validate_user, AuthResponse, READ, WRITE},
     types::AppState,
     utils::{
         db::{
@@ -17,29 +16,20 @@ use actix_multipart::form::{tempfile::TempFile, text::Text, MultipartForm};
 use actix_web::{
     error::{self},
     get, post,
-    web::{self, Json, Path, ReqData},
+    web::{self, Json, ReqData},
     Result, Scope,
 };
 use diesel::dsl::max;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use superposition_rust_sdk::apis::default_api::create_default_config;
-use superposition_rust_sdk::apis::default_api::{create_workspace, CreateDefaultConfigError};
-use superposition_rust_sdk::models::{
-    CreateDefaultConfigRequestContent, CreateDefaultConfigResponseContent,
-    CreateWorkspaceRequestContent, WorkspaceStatus,
-};
 use superposition_rust_sdk::{
     apis::default_api::create_experiment,
-    models::{self, CreateExperimentRequestContent},
+    models,
 };
 
 use diesel::prelude::*;
 use diesel::ExpressionMethods;
 use diesel::QueryDsl;
-
-use crate::utils::db::schema::hyperotaserver::configs;
-use crate::utils::db::schema::hyperotaserver::configs::dsl::configs as configs_table;
 
 pub fn add_routes() -> Scope {
     Scope::new("")
@@ -341,6 +331,9 @@ async fn create_json(
     let superposition_org_id_from_env = state.env.superposition_org_id.clone();
     println!("Using Superposition Org ID from environment for create_json: {}", superposition_org_id_from_env);
 
+    // Get workspace name for this application
+    let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await?;
+    println!("Using workspace name for create_json: {}", workspace_name);
 
     // Create the experimental variant (required by check_variant_types)
     let experimental_variant = models::Variant {
@@ -365,11 +358,11 @@ async fn create_json(
     println!("experiment_content : {:?}", experiment_content);
     println!("superposition_org_id_from_env : {:?}", superposition_org_id_from_env);
 
-    // Call create_experiment
+    // Call create_experiment with workspace name
     let experiment = create_experiment(
         &state.superposition_configuration,
         &superposition_org_id_from_env, // Use ID from env
-        &application,
+        &workspace_name,  // Use workspace name instead of application
         experiment_content,
     )
     .await
@@ -377,15 +370,75 @@ async fn create_json(
 
     println!("experiment : {:?}", experiment);
 
+    // Store package data with file information from preboot/postboot resources
+    let mut important_files: Vec<crate::utils::db::models::File> = Vec::new();
+    let mut lazy_files: Vec<crate::utils::db::models::File> = Vec::new();
+
+    // Extract files from manifest and categorize them
+    if let Some(manifest) = &req.package.properties.manifest {
+        for file_path in manifest.entries.values() {
+            if let Some(filename) = file_path.split('/').last() {
+                // For now, treat manifest files as important
+                important_files.push(crate::utils::db::models::File {
+                    url: format!("{}/{}", state.env.public_url, file_path),
+                    file_path: filename.to_string(),
+                });
+            }
+        }
+    }
+
+    // Extract files from preboot/postboot resources
+    if let Some(preboot) = &req.package.preboot {
+        if let Some(mandatory) = &preboot.mandatory {
+            for entry in mandatory.entries.values() {
+                important_files.push(crate::utils::db::models::File {
+                    url: entry.url.clone(),
+                    file_path: entry.filePath.clone(),
+                });
+            }
+        }
+        if let Some(best_effort) = &preboot.best_effort {
+            for entry in best_effort.entries.values() {
+                lazy_files.push(crate::utils::db::models::File {
+                    url: entry.url.clone(),
+                    file_path: entry.filePath.clone(),
+                });
+            }
+        }
+    }
+
+    if let Some(postboot) = &req.package.postboot {
+        if let Some(mandatory) = &postboot.mandatory {
+            for entry in mandatory.entries.values() {
+                important_files.push(crate::utils::db::models::File {
+                    url: entry.url.clone(),
+                    file_path: entry.filePath.clone(),
+                });
+            }
+        }
+        if let Some(best_effort) = &postboot.best_effort {
+            for entry in best_effort.entries.values() {
+                lazy_files.push(crate::utils::db::models::File {
+                    url: entry.url.clone(),
+                    file_path: entry.filePath.clone(),
+                });
+            }
+        }
+    }
+
     diesel::insert_into(packages)
         .values(PackageEntry {
             version: ver,
             app_id: application,
             org_id: organisation,
-            contents: file_list.into_iter().map(Some).collect(),
             index: index_name,
             version_splits: true,
             use_urls: true,
+            properties: serde_json::to_value(&req.package.properties)
+                .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+            important: serde_json::to_value(&important_files).map_err(error::ErrorInternalServerError)?,
+            lazy: serde_json::to_value(&lazy_files).map_err(error::ErrorInternalServerError)?,
+            resources: serde_json::Value::Array(vec![]), // Default to empty array for create_json
         })
         .execute(&mut conn)
         .map_err(error::ErrorInternalServerError)?;
@@ -401,7 +454,8 @@ struct PackageList {
 #[derive(Serialize)]
 struct Package {
     index: String,
-    splits: Vec<String>,
+    important: Vec<crate::utils::db::models::File>,
+    lazy: Vec<crate::utils::db::models::File>,
     version: i32,
     id: String,
 }
@@ -426,13 +480,22 @@ async fn list(
         .filter(org_id.eq(organisation).and(app_id.eq(application)))
         .load::<PackageEntryRead>(&mut conn)
         .map_err(error::ErrorInternalServerError)?;
+    
     let entries = entries
         .iter()
-        .map(|a| Package {
-            index: a.index.to_owned(),
-            splits: a.contents.iter().filter_map(|s| s.clone()).collect(),
-            version: a.version,
-            id: a.id.to_string(),
+        .map(|a| {
+            let important: Vec<crate::utils::db::models::File> = 
+                serde_json::from_value(a.important.clone()).unwrap_or_default();
+            let lazy: Vec<crate::utils::db::models::File> = 
+                serde_json::from_value(a.lazy.clone()).unwrap_or_default();
+            
+            Package {
+                index: a.index.to_owned(),
+                important,
+                lazy,
+                version: a.version,
+                id: a.id.to_string(),
+            }
         })
         .collect();
 
@@ -489,7 +552,7 @@ struct PackageJsonV1MultipartRequest {
 #[derive(Debug, Deserialize, Serialize)]
 struct PackageJsonV1Request {
     package: PackageV1,
-    resources: serde_json::Value,
+    resources: Vec<crate::utils::db::models::File>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -499,7 +562,8 @@ struct PackageV1 {
     #[serde(flatten)]
     properties: serde_json::Value,
     index: String,
-    splits: Vec<String>,
+    important: Vec<crate::utils::db::models::File>,
+    lazy: Vec<crate::utils::db::models::File>,
 }
 
 #[post("/create_package_json_v1")]
@@ -530,6 +594,10 @@ async fn create_package_json_v1(
     // Use superposition_org_id from environment
     let superposition_org_id_from_env = state.env.superposition_org_id.clone();
     println!("Using Superposition Org ID from environment for create_package_json_v1: {}", superposition_org_id_from_env);
+
+    // Get workspace name for this application
+    let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await?;
+    println!("Using workspace name for create_package_json_v1: {}", workspace_name);
 
     // Create control variant with package configuration
     let mut control_overrides = std::collections::HashMap::new();
@@ -572,22 +640,25 @@ async fn create_package_json_v1(
     create_experiment(
         &state.superposition_configuration,
         &superposition_org_id_from_env, // Use ID from env
-        &application,
+        &workspace_name,  // Use workspace name instead of application
         experiment_content,
     )
     .await
     .map_err(|e| error::ErrorInternalServerError(format!("Failed to create experiment: {}", e)))?;
 
-    // Store package data with full URLs
+    // Store package data with the new important and lazy structure
     diesel::insert_into(packages)
         .values(PackageEntry {
             version: ver,
             app_id: application.clone(),
             org_id: organisation.clone(),
-            contents: req.package.splits.clone().into_iter().map(Some).collect(),
             index: req.package.index.clone(),
             version_splits: true,
             use_urls: true,
+            important: serde_json::to_value(&req.package.important).map_err(error::ErrorInternalServerError)?,
+            lazy: serde_json::to_value(&req.package.lazy).map_err(error::ErrorInternalServerError)?,
+            properties: serde_json::to_value(&req.package.properties).unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+            resources: serde_json::to_value(&req.resources).map_err(error::ErrorInternalServerError)?,
         })
         .execute(&mut conn)
         .map_err(error::ErrorInternalServerError)?;
@@ -677,6 +748,9 @@ async fn create_json_v1_multipart(
     let superposition_org_id_from_env = state.env.superposition_org_id.clone();
     println!("Using Superposition Org ID from environment for create_json_v1_multipart: {}", superposition_org_id_from_env);
 
+    // Get workspace name for this application
+    let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await?;
+    println!("Using workspace name for create_json_v1_multipart: {}", workspace_name);
 
     // Extract package properties (dynamically)
     let manifest = req
@@ -732,22 +806,25 @@ async fn create_json_v1_multipart(
     create_experiment(
         &state.superposition_configuration,
         &superposition_org_id_from_env, // Use ID from env
-        &application,
+        &workspace_name,  // Use workspace name instead of application
         experiment_content,
     )
     .await
     .map_err(|e| error::ErrorInternalServerError(format!("Failed to create experiment: {}", e)))?;
 
-    // Store package data with full URLs
+    // Store package data with the new important and lazy structure
     diesel::insert_into(packages)
         .values(PackageEntry {
             version: ver,
             app_id: application.clone(),
             org_id: organisation.clone(),
-            contents: req.package.splits.clone().into_iter().map(Some).collect(),
             index: req.package.index.clone(),
             version_splits: true,
             use_urls: true,
+            important: serde_json::to_value(&req.package.important).map_err(error::ErrorInternalServerError)?,
+            lazy: serde_json::to_value(&req.package.lazy).map_err(error::ErrorInternalServerError)?,
+            properties: serde_json::to_value(&req.package.properties).unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+            resources: serde_json::to_value(&req.resources).map_err(error::ErrorInternalServerError)?,
         })
         .execute(&mut conn)
         .map_err(error::ErrorInternalServerError)?;

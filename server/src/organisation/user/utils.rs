@@ -16,13 +16,14 @@ pub fn get_user_highest_level(
     let mut highest = 0;
 
     for group in groups {
-        if let Some(path) = &group.path {
-            if !path.contains(&format!("/{}", org_id)) {
+        if let Some(parent_id) = &group.parent_id {
+            if parent_id != org_id {
                 continue;
             }
 
-            if let Some(role) = path.split('/').last() {
-                if let Some(level) = match role {
+            // Get the role name from the group name instead of path
+            if let Some(role) = &group.name {
+                if let Some(level) = match role.as_str() {
                     "read" => Some(READ.access),
                     "write" => Some(WRITE.access),
                     "admin" => Some(ADMIN.access),

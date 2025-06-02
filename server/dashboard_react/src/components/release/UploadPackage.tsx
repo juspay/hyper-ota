@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Save, FileUp, X, Package } from "lucide-react";
+import { Upload, Save, FileUp, X, Package, Copy, Check } from "lucide-react";
 import { Application, Organisation } from "../../types";
 import axios from "../../api/axios";
 
@@ -22,6 +22,7 @@ export default function UploadPackage({
   const [indexFile, setIndexFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -147,6 +148,43 @@ export default function UploadPackage({
   const removeIndexFile = () => {
     setIndexFile(null);
     setUploadError("");
+  };
+
+  const handleCopyExample = async () => {
+    const exampleJson = `{
+  "package": {
+   "name": "Application_Name",
+   "version": "1.0.0",
+   "index": "https://assets.juspay.in/bundles/index.js",
+   "properties": {},
+   "important": [
+     {
+       "url": "https://assets.juspay.in/bundles/initial.js",
+       "filePath": "initial.js"
+     }
+   ],
+   "lazy": [
+     {
+       "url": "https://assets.juspay.in/images/card.png",
+       "filePath": "card.png"
+     }
+   ]
+ },
+ "resources": [
+	{
+       "url": "https://assets.juspay.in/configs/config.js",
+       "filePath": "config.js"
+     }
+ ]
+}`;
+
+    try {
+      await navigator.clipboard.writeText(exampleJson);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
   };
 
   return (
@@ -299,21 +337,47 @@ export default function UploadPackage({
                   Package JSON Format Example
                 </summary>
                 <div className="px-6 pb-6">
-                  <pre className="p-4 text-xs text-white/70 overflow-x-auto bg-black/30 rounded-lg border border-white/10">
-                    {`{
+                  <div className="relative">
+                    <button
+                      onClick={handleCopyExample}
+                      className="absolute top-2 right-2 p-2 text-white/60 hover:text-white/90 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 z-10"
+                      title={isCopied ? "Copied!" : "Copy example"}
+                    >
+                      {isCopied ? (
+                        <Check size={16} className="text-green-400" />
+                      ) : (
+                        <Copy size={16} />
+                      )}
+                    </button>
+                    <pre className="p-4 text-xs text-white/70 overflow-x-auto bg-black/30 rounded-lg border border-white/10">
+                      {`{
   "package": {
-    "name": "hyperpay",
-    "version": "1.0.0",
-    "properties": {
-      "manifest": {},
-      "manifest_hash": {}
-    },
-    "index": "https://assets.juspay.in/juspay/hyper-os/in.juspay.hyperos/release/2.0rc1/3.6.21/v1-boot_loader.zip",
-    "splits": []
-  },
-  "resources": {}
+   "name": "Application_Name",
+   "version": "1.0.0",
+   "index": "https://assets.juspay.in/bundles/index.js",
+   "properties": {},
+   "important": [
+     {
+       "url": "https://assets.juspay.in/bundles/initial.js",
+       "filePath": "initial.js"
+     }
+   ],
+   "lazy": [
+     {
+       "url": "https://assets.juspay.in/images/card.png",
+       "filePath": "card.png"
+     }
+   ]
+ },
+ "resources": [
+	{
+       "url": "https://assets.juspay.in/configs/config.js",
+       "filePath": "config.js"
+     }
+ ]
 }`}
-                  </pre>
+                    </pre>
+                  </div>
                 </div>
               </details>
             </div>

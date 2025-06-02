@@ -55,7 +55,7 @@ echo "Using DATABASE_URL for diesel: [Filtered, not logging password for securit
 echo "Attempting to run diesel migration..."
 
 # Run migrations
-diesel migration run
+# diesel migration run
 
 # Optional: Check exit code
 if [ $? -eq 0 ]; then

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import decorativeImage from '../../assets/login-decorative-image.jpeg';
-import smallLogoImage from '../../assets/hyperota-cube-logo2.png'; // Assuming this is the correct small logo
+import smallLogoImage from '../../assets/hyperota-cube-logo.png'; // Assuming this is the correct small logo
 
 interface AuthLayoutProps {
   children: React.ReactNode;

@@ -2,6 +2,7 @@ pub mod models;
 pub mod schema;
 
 use aws_sdk_kms::Client;
+use diesel::Connection;
 
 use crate::utils::kms::decrypt_kms;
 use diesel::pg::PgConnection;
@@ -12,8 +13,8 @@ use urlencoding::encode;
 // Type alias for Diesel's connection pool
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
-pub async fn get_database_url(kms_client: &Client) -> String {
-    let db_user: String = env::var("DB_USER").expect("DB_USER must be set");
+pub async fn get_database_url(userkey: &str, passwordkey: &str, kms_client: &Client) -> String {
+    let db_user: String = env::var(userkey).expect("DB_USER must be set");
 
     // Check if DATABASE_URL is set - use it directly if available for local development
     if let Ok(database_url) = env::var("DATABASE_URL") {
@@ -22,7 +23,7 @@ pub async fn get_database_url(kms_client: &Client) -> String {
 
     let x = decrypt_kms(
         kms_client,
-        env::var("DB_PASSWORD").expect("DB_PASSWORD must be set"),
+        env::var(passwordkey).expect("DB_PASSWORD must be set"),
     )
     .await;
 
@@ -38,7 +39,7 @@ pub async fn get_database_url(kms_client: &Client) -> String {
 
 // Function to create a new connection pool
 pub async fn establish_pool(kms_client: &Client) -> DbPool {
-    let database_url = get_database_url(kms_client).await;
+    let database_url = get_database_url("DB_USER", "DB_PASSWORD", kms_client).await;
     let max_connections: u32 = env::var("DATABASE_POOL_SIZE")
         .unwrap_or_else(|_| "4".to_string()) // Default to "4" if not set
         .parse()
@@ -64,4 +65,11 @@ pub async fn establish_pool(kms_client: &Client) -> DbPool {
             panic!("Failed to create DB pool: {}", e);
         }
     }
+}
+
+
+pub async fn establish_connection(kms_client: &Client) -> PgConnection {
+    // Have a different user with higher access for DB migrations
+    let database_url = get_database_url("DB_MIGRATION_USER","DB_MIGRATION_PASSWORD",kms_client).await;
+    PgConnection::establish(&database_url).expect("Failed to connect to database")
 }

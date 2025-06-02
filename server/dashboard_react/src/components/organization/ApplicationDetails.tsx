@@ -26,7 +26,14 @@ interface ReleaseInfo {
       manifest_hash: Record<string, any>;
     };
     index: string;
-    splits: string[];
+    important: Array<{
+      url: string;
+      file_path: string;
+    }>;
+    lazy: Array<{
+      url: string;
+      file_path: string;
+    }>;
   };
 }
 
@@ -280,8 +287,12 @@ export default function ApplicationDetails({
                     <span className="text-white font-mono">{releaseInfo.package.name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/60">Split Files:</span>
-                    <span className="text-white font-mono">{releaseInfo.package.splits.length}</span>
+                    <span className="text-white/60">Important Files:</span>
+                    <span className="text-white font-mono">{releaseInfo.package.important.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/60">Lazy Files:</span>
+                    <span className="text-white font-mono">{releaseInfo.package.lazy.length}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="text-white/60">Assets Domain:</span>

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{web, App, HttpServer};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 mod dashboard;
 mod middleware;
@@ -17,6 +18,8 @@ use middleware::auth::Auth;
 use reqwest::Client;
 use superposition_rust_sdk::apis::configuration::Configuration;
 use utils::{db, kms::decrypt_kms, transaction_manager::start_cleanup_job};
+
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -43,6 +46,9 @@ async fn main() -> std::io::Result<()> {
 
     let aws_kms_client = aws_sdk_kms::Client::new(&shared_config);
 
+    let mut conn = db::establish_connection(&aws_kms_client).await;
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Failed to run pending migrations");
     // Initialize DB pool
     let pool = db::establish_pool(&aws_kms_client).await;
     let secret = decrypt_kms(&aws_kms_client, enc_sec).await;

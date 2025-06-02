@@ -38,7 +38,7 @@ echo "Output will be written to $OUTPUT_FILE"
 > "$OUTPUT_FILE"
 
 # Variables that need encryption
-SENSITIVE_VARS=("DB_PASSWORD" "KEYCLOAK_SECRET")
+SENSITIVE_VARS=("DB_PASSWORD" "KEYCLOAK_SECRET" "DB_MIGRATION_PASSWORD")
 echo "Will encrypt the following variables: ${SENSITIVE_VARS[*]}"
 
 echo "🔐 Encrypting sensitive environment variables using AWS KMS..."
