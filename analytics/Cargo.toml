@@ -1,0 +1,47 @@
+[package]
+name = "analytics-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+tokio = { version = "1.0", features = ["full"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = "1.0"
+
+# Kafka
+rdkafka = { version = "0.36", features = ["ssl", "sasl", "tokio"] }
+
+# ClickHouse
+clickhouse = { version = "0.11", features = ["uuid", "time"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async utilities
+futures = "0.3"
+async-trait = "0.1"
+
+# Configuration
+config = "0.14"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Environment variables
+dotenv = "0.15"
