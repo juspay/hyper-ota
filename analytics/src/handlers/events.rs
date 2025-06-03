@@ -72,23 +72,16 @@ pub async fn ingest_event(
         ip_address,
     };
 
-    // Send to Kafka for real-time processing
+    // ONLY send to Kafka - let consumer handle ClickHouse
     if let Err(e) = state.kafka.send_ota_event(&event).await {
         error!("Failed to send event to Kafka: {:?}", e);
-        // Continue with direct insertion to ClickHouse
     }
 
-    // Also store directly in ClickHouse for immediate availability
-    if let Err(e) = state.clickhouse.insert_ota_event(&event).await {
-        error!("Failed to insert event to ClickHouse: {:?}", e);
-        return Err(AppError::DatabaseError(e.to_string()));
-    }
-
-    info!("Successfully ingested OTA event: {:?}", event.event_id);
+    info!("Successfully queued OTA event: {:?}", event.event_id);
 
     Ok(Json(json!({
         "status": "success",
-        "message": "OTA event ingested successfully",
+        "message": "OTA event queued for processing",
         "event_id": event.event_id,
         "timestamp": Utc::now()
     })))

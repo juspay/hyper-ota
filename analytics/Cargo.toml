@@ -15,7 +15,7 @@ hyper = "1.0"
 rdkafka = { version = "0.36", features = ["ssl", "sasl", "tokio"] }
 
 # ClickHouse
-clickhouse = { version = "0.11", features = ["uuid", "time"] }
+clickhouse = { version = "0.12.2", features = ["uuid", "time"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

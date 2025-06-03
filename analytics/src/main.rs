@@ -10,6 +10,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use tower::ServiceBuilder;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -40,9 +41,9 @@ async fn main() -> Result<()> {
     info!("Connected to ClickHouse");
 
     // Initialize tables and views
-    if let Err(e) = clickhouse_client.init_schema().await {
-        warn!("Failed to initialize ClickHouse schema: {:?}", e);
-    }
+    // if let Err(e) = clickhouse_client.init_schema().await {
+    //     warn!("Failed to initialize ClickHouse schema: {:?}", e);
+    // }
 
     // Initialize Kafka producer
     let kafka_producer = Arc::new(kafka::Producer::new(&config.kafka).await?);
@@ -94,11 +95,11 @@ async fn main() -> Result<()> {
         info!("Shutdown signal received, stopping server...");
     };
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal)
         .await?;
 
-    // Wait for consumer to finish
+    // Wait for consumer to finish (should never finish)
     consumer_handle.abort();
     info!("OTA Analytics Server stopped");
 

@@ -1,14 +1,13 @@
 use anyhow::Result;
 use clickhouse::{Client as ClickHouseClient, Row};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tracing::{info, error};
-use chrono::{DateTime, Utc, NaiveDate};
+use serde::{Serialize};
+use tracing::{info};
+use chrono::{DateTime, Datelike, Utc};
 use uuid::Uuid;
 
 use crate::config::ClickHouseConfig;
 use crate::models::{
-    OtaEvent, OtaEventType, AnalyticsQuery, AnalyticsQueryResult, PageInfo,
+    OtaEvent, AnalyticsQuery, AnalyticsQueryResult, PageInfo,
     AdoptionMetrics, HourlyInstalls, VersionDistribution, VersionMetrics,
     ActiveDevicesMetrics, DailyActiveDevices, FailureAnalytics, ErrorFrequency, DailyFailures
 };
@@ -49,52 +48,6 @@ impl Client {
         self.client.query(sql)
     }
 
-    /// Initialize the database schema
-    pub async fn init_schema(&self) -> Result<()> {
-        info!("Initializing ClickHouse schema for OTA analytics");
-        
-        // Create main OTA events table if it doesn't exist
-        let create_table_sql = r#"
-            CREATE TABLE IF NOT EXISTS ota_events_raw (
-                tenantId String,
-                orgId String,
-                appId String,
-                deviceId String,
-                sessionId Nullable(String),
-                eventType String,
-                eventId UUID,
-                timestamp DateTime64(3, 'UTC'),
-                eventDate Date,
-                releaseId Nullable(String),
-                currentJsVersion Nullable(String),
-                targetJsVersion Nullable(String),
-                rolloutPercentage Nullable(UInt8),
-                osVersion Nullable(String),
-                appVersion Nullable(String),
-                deviceType Nullable(String),
-                networkType Nullable(String),
-                errorCode Nullable(String),
-                errorMessage Nullable(String),
-                stackTrace Nullable(String),
-                downloadSizeBytes Nullable(UInt64),
-                downloadTimeMs Nullable(UInt64),
-                applyTimeMs Nullable(UInt64),
-                payload Nullable(String),
-                userAgent Nullable(String),
-                ipAddress Nullable(String),
-                ingestedAt DateTime64(3, 'UTC') DEFAULT now64()
-            ) ENGINE = MergeTree()
-            PARTITION BY toYYYYMM(eventDate)
-            ORDER BY (tenantId, orgId, appId, eventDate, eventType, timestamp)
-            SETTINGS index_granularity = 8192
-        "#;
-        
-        self.client.query(create_table_sql).execute().await?;
-        info!("OTA events table created/verified");
-
-        Ok(())
-    }
-
     /// Insert OTA event into the raw events table
     pub async fn insert_ota_event(&self, event: &OtaEvent) -> Result<()> {
         #[derive(Row, Serialize)]
@@ -111,11 +64,11 @@ impl Client {
             session_id: Option<String>,
             #[serde(rename = "eventType")]
             event_type: String,
-            #[serde(rename = "eventId")]
+            #[serde(rename = "eventId", with = "clickhouse::serde::uuid")]
             event_id: uuid::Uuid,
-            timestamp: DateTime<Utc>,
+            timestamp: i64,
             #[serde(rename = "eventDate")]
-            event_date: chrono::NaiveDate,
+            event_date: u16,
             #[serde(rename = "releaseId")]
             release_id: Option<String>,
             #[serde(rename = "currentJsVersion")]
@@ -144,13 +97,12 @@ impl Client {
             download_time_ms: Option<u64>,
             #[serde(rename = "applyTimeMs")]
             apply_time_ms: Option<u64>,
-            payload: String,
+            payload: Option<String>,  // Changed to Option<String> to match Nullable(String)
             #[serde(rename = "userAgent")]
             user_agent: Option<String>,
             #[serde(rename = "ipAddress")]
             ip_address: Option<String>,
-            #[serde(rename = "ingestedAt")]
-            ingested_at: DateTime<Utc>,
+            // ingestedAt is removed since it has a DEFAULT value in ClickHouse
         }
 
         let row = OtaEventRow {
@@ -161,8 +113,8 @@ impl Client {
             session_id: event.session_id.clone(),
             event_type: event.event_type.to_string(),
             event_id: event.event_id.unwrap_or_else(|| uuid::Uuid::new_v4()),
-            timestamp: event.timestamp,
-            event_date: event.timestamp.date_naive(),
+            timestamp: event.timestamp.timestamp(),
+            event_date: (event.timestamp.num_days_from_ce() - 719_163) as u16, // Convert to ClickHouse date format (days since 1970-01-01),
             release_id: event.release_id.clone(),
             current_js_version: event.current_js_version.clone(),
             target_js_version: event.target_js_version.clone(),
@@ -178,11 +130,9 @@ impl Client {
             download_time_ms: event.download_time_ms,
             apply_time_ms: event.apply_time_ms,
             payload: event.payload.as_ref()
-                .map(|p| serde_json::to_string(p).unwrap_or_default())
-                .unwrap_or_else(|| "{}".to_string()),
+                .map(|p| serde_json::to_string(p).unwrap_or_default()),
             user_agent: event.user_agent.clone(),
             ip_address: event.ip_address.clone(),
-            ingested_at: Utc::now(),
         };
 
         let mut insert = self.client.insert("ota_events_raw")?;
@@ -213,11 +163,11 @@ impl Client {
             session_id: Option<String>,
             #[serde(rename = "eventType")]
             event_type: String,
-            #[serde(rename = "eventId")]
+            #[serde(rename = "eventId", with = "clickhouse::serde::uuid")]
             event_id: uuid::Uuid,
-            timestamp: DateTime<Utc>,
+            timestamp: i64,
             #[serde(rename = "eventDate")]
-            event_date: chrono::NaiveDate,
+            event_date: u16,
             #[serde(rename = "releaseId")]
             release_id: Option<String>,
             #[serde(rename = "currentJsVersion")]
@@ -246,13 +196,12 @@ impl Client {
             download_time_ms: Option<u64>,
             #[serde(rename = "applyTimeMs")]
             apply_time_ms: Option<u64>,
-            payload: String,
+            payload: Option<String>,  // Changed to Option<String> to match Nullable(String)
             #[serde(rename = "userAgent")]
             user_agent: Option<String>,
             #[serde(rename = "ipAddress")]
             ip_address: Option<String>,
-            #[serde(rename = "ingestedAt")]
-            ingested_at: DateTime<Utc>,
+            // ingestedAt is removed since it has a DEFAULT value in ClickHouse
         }
 
         let events_len = events.len();
@@ -265,8 +214,8 @@ impl Client {
                 session_id: event.session_id,
                 event_type: event.event_type.to_string(),
                 event_id: event.event_id.unwrap_or_else(|| Uuid::new_v4()),
-                timestamp: event.timestamp,
-                event_date: event.timestamp.date_naive(),
+                timestamp: event.timestamp.timestamp(),
+                event_date: (event.timestamp.num_days_from_ce() - 719_163) as u16, // Convert to ClickHouse date format (days since 1970-01-01)
                 release_id: event.release_id,
                 current_js_version: event.current_js_version,
                 target_js_version: event.target_js_version,
@@ -282,11 +231,9 @@ impl Client {
                 download_time_ms: event.download_time_ms,
                 apply_time_ms: event.apply_time_ms,
                 payload: event.payload.as_ref()
-                    .map(|p| serde_json::to_string(p).unwrap_or_default())
-                    .unwrap_or_else(|| "{}".to_string()),
+                    .map(|p| serde_json::to_string(p).unwrap_or_default()),
                 user_agent: event.user_agent,
                 ip_address: event.ip_address,
-                ingested_at: Utc::now(),
             }
         }).collect();
 
@@ -383,56 +330,82 @@ impl Client {
         release_id: &str,
         days: u32,
     ) -> Result<AdoptionMetrics> {
-        // Get hourly installs
+        // Get hourly installs from raw table
         let hourly_sql = format!(
             r#"
             SELECT 
-                hourSlot,
-                uniqExactMerge(installs) as installs
-            FROM hourly_installs 
+                toHour(timestamp) as hour_slot,
+                count() as installs
+            FROM ota_events_raw 
             WHERE tenantId = '{}' 
               AND orgId = '{}' 
               AND appId = '{}' 
               AND releaseId = '{}'
-              AND hourSlot >= subtractDays(now(), {})
-            ORDER BY hourSlot
+              AND eventType = 'install_success'
+              AND timestamp >= subtractDays(now(), {})
+            GROUP BY hour_slot
+            ORDER BY hour_slot
             "#,
             tenant_id, org_id, app_id, release_id, days
         );
 
-        let mut hourly_cursor = self.client.query(&hourly_sql).fetch::<(u64, u64)>()?;
+        let mut hourly_cursor = self.client.query(&hourly_sql).fetch::<(u8, u64)>()?;
         let mut hourly_breakdown = Vec::new();
         let mut total_installs = 0u64;
 
-        while let Some((timestamp_epoch, installs)) = hourly_cursor.next().await? {
+        while let Some((hour, installs)) = hourly_cursor.next().await? {
             total_installs += installs;
-            // Convert epoch to DateTime for compatibility
-            let hour_slot = DateTime::from_timestamp(timestamp_epoch as i64, 0)
+            // Create a DateTime for the hour slot using today's date + hour
+            let today = Utc::now().date_naive();
+            let hour_slot = today.and_hms_opt(hour as u32, 0, 0)
+                .map(|dt| dt.and_utc())
                 .unwrap_or_else(|| Utc::now());
             hourly_breakdown.push(HourlyInstalls { hour_slot, installs });
         }
 
-        // Get failure and rollback counts
+        // Get failure counts from raw table
         let failure_sql = format!(
             r#"
             SELECT 
-                sumMerge(failureCount) as failures,
-                sumMerge(rollbackCount) as rollbacks
-            FROM daily_failures_rollbacks 
+                count() as failures
+            FROM ota_events_raw 
             WHERE tenantId = '{}' 
               AND orgId = '{}' 
               AND appId = '{}' 
               AND releaseId = '{}'
-              AND statDate >= subtractDays(today(), {})
+              AND eventType IN ('install_failed', 'download_failed')
+              AND timestamp >= subtractDays(now(), {})
             "#,
             tenant_id, org_id, app_id, release_id, days
         );
 
-        let (failures, rollbacks): (u64, u64) = self.client
+        let failures: u64 = self.client
             .query(&failure_sql)
             .fetch_one()
             .await
-            .unwrap_or((0, 0));
+            .unwrap_or(0);
+
+        // Get rollback counts from raw table
+        let rollback_sql = format!(
+            r#"
+            SELECT 
+                count() as rollbacks
+            FROM ota_events_raw 
+            WHERE tenantId = '{}' 
+              AND orgId = '{}' 
+              AND appId = '{}' 
+              AND releaseId = '{}'
+              AND eventType = 'rollback_triggered'
+              AND timestamp >= subtractDays(now(), {})
+            "#,
+            tenant_id, org_id, app_id, release_id, days
+        );
+
+        let rollbacks: u64 = self.client
+            .query(&rollback_sql)
+            .fetch_one()
+            .await
+            .unwrap_or(0);
 
         let total_attempts = total_installs + failures;
         let success_rate = if total_attempts > 0 {
@@ -456,7 +429,7 @@ impl Client {
         Ok(AdoptionMetrics {
             tenant_id: tenant_id.to_string(),
             org_id: org_id.to_string(),
-            app_id: app_id.to_string(),
+            app_id: app_id.to_string(),     
             release_id: release_id.to_string(),
             total_installs,
             hourly_breakdown,
@@ -477,14 +450,15 @@ impl Client {
         let sql = format!(
             r#"
             SELECT 
-                jsVersion,
-                sum(uniqExactMerge(deviceCount)) as device_count
-            FROM daily_version_dist 
+                currentJsVersion as js_version,
+                uniq(deviceId) as device_count
+            FROM ota_events_raw 
             WHERE tenantId = '{}' 
               AND orgId = '{}' 
               AND appId = '{}' 
-              AND statDate >= subtractDays(today(), {})
-            GROUP BY jsVersion
+              AND currentJsVersion IS NOT NULL
+              AND timestamp >= subtractDays(now(), {})
+            GROUP BY js_version
             ORDER BY device_count DESC
             "#,
             tenant_id, org_id, app_id, days
@@ -499,7 +473,7 @@ impl Client {
             versions.push(VersionMetrics {
                 js_version,
                 device_count,
-                percentage: 0.0, // Will calculate after we know total
+                percentage: 0.0, // Will be calculated below
             });
         }
 
@@ -516,8 +490,8 @@ impl Client {
             tenant_id: tenant_id.to_string(),
             org_id: org_id.to_string(),
             app_id: app_id.to_string(),
-            versions,
             total_devices,
+            versions,
         })
     }
 
@@ -532,14 +506,15 @@ impl Client {
         let sql = format!(
             r#"
             SELECT 
-                statDate,
-                uniqExactMerge(activeDevices) as active_devices
-            FROM daily_active_devices 
+                toDate(timestamp) as event_date,
+                uniq(deviceId) as active_devices
+            FROM ota_events_raw 
             WHERE tenantId = '{}' 
               AND orgId = '{}' 
               AND appId = '{}' 
-              AND statDate >= subtractDays(today(), {})
-            ORDER BY statDate
+              AND timestamp >= subtractDays(now(), {})
+            GROUP BY event_date
+            ORDER BY event_date
             "#,
             tenant_id, org_id, app_id, days
         );
@@ -552,8 +527,8 @@ impl Client {
             if active_devices > total_active_devices {
                 total_active_devices = active_devices;
             }
-            // Convert days since epoch to NaiveDate
-            let date = NaiveDate::from_num_days_from_ce_opt(date_days as i32 + 719163)
+            // Convert ClickHouse Date (days since 1900-01-01) to NaiveDate
+            let date = chrono::NaiveDate::from_num_days_from_ce_opt(date_days as i32 + 693_594)
                 .unwrap_or_else(|| chrono::Utc::now().date_naive());
             daily_breakdown.push(DailyActiveDevices { date, active_devices });
         }
@@ -577,7 +552,7 @@ impl Client {
         days: u32,
     ) -> Result<FailureAnalytics> {
         let mut where_clause = format!(
-            "tenantId = '{}' AND orgId = '{}' AND appId = '{}' AND statDate >= subtractDays(today(), {})",
+            "tenantId = '{}' AND orgId = '{}' AND appId = '{}' AND timestamp >= subtractDays(now(), {})",
             tenant_id, org_id, app_id, days
         );
 
@@ -589,9 +564,9 @@ impl Client {
         let totals_sql = format!(
             r#"
             SELECT 
-                sumMerge(failureCount) as total_failures,
-                sumMerge(rollbackCount) as total_rollbacks
-            FROM daily_failures_rollbacks 
+                countIf(eventType IN ('install_failed', 'download_failed')) as total_failures,
+                countIf(eventType = 'rollback_triggered') as total_rollbacks
+            FROM ota_events_raw 
             WHERE {}
             "#,
             where_clause
@@ -607,13 +582,13 @@ impl Client {
         let daily_sql = format!(
             r#"
             SELECT 
-                statDate,
-                sumMerge(failureCount) as failures,
-                sumMerge(rollbackCount) as rollbacks
-            FROM daily_failures_rollbacks 
+                toDate(timestamp) as event_date,
+                countIf(eventType IN ('install_failed', 'download_failed')) as failures,
+                countIf(eventType = 'rollback_triggered') as rollbacks
+            FROM ota_events_raw 
             WHERE {}
-            GROUP BY statDate
-            ORDER BY statDate
+            GROUP BY event_date
+            ORDER BY event_date
             "#,
             where_clause
         );
@@ -622,13 +597,53 @@ impl Client {
         let mut failure_rate_trend = Vec::new();
 
         while let Some((date_days, failures, rollbacks)) = daily_cursor.next().await? {
-            let date = NaiveDate::from_num_days_from_ce_opt(date_days as i32 + 719163)
+            // Convert ClickHouse Date (days since 1900-01-01) to NaiveDate
+            let date = chrono::NaiveDate::from_num_days_from_ce_opt(date_days as i32 + 693_594)
                 .unwrap_or_else(|| chrono::Utc::now().date_naive());
             failure_rate_trend.push(DailyFailures { date, failures, rollbacks });
         }
 
-        // For now, return empty common_errors - would need more complex query for error aggregation
-        let common_errors = Vec::new();
+        // Get common errors
+        let errors_sql = format!(
+            r#"
+            SELECT 
+                errorCode,
+                count() as frequency
+            FROM ota_events_raw 
+            WHERE {} 
+              AND eventType IN ('install_failed', 'download_failed')
+              AND errorCode IS NOT NULL
+            GROUP BY errorCode
+            ORDER BY frequency DESC
+            LIMIT 10
+            "#,
+            where_clause
+        );
+
+        let mut errors_cursor = self.client.query(&errors_sql).fetch::<(String, u64)>()?;
+        let mut common_errors = Vec::new();
+        let mut total_error_count = 0u64;
+
+        // First pass: collect errors and calculate total
+        let mut error_data = Vec::new();
+        while let Some((error_code, frequency)) = errors_cursor.next().await? {
+            total_error_count += frequency;
+            error_data.push((error_code, frequency));
+        }
+
+        // Second pass: calculate percentages
+        for (error_code, count) in error_data {
+            let percentage = if total_error_count > 0 {
+                (count as f64 / total_error_count as f64) * 100.0
+            } else {
+                0.0
+            };
+            common_errors.push(ErrorFrequency {
+                error_code,
+                count,
+                percentage,
+            });
+        }
 
         Ok(FailureAnalytics {
             tenant_id: tenant_id.to_string(),
