@@ -40,9 +40,9 @@ impl Config {
         let config = Config {
             server: ServerConfig {
                 port: env::var("SERVER_PORT")
-                    .unwrap_or_else(|_| "8080".to_string())
+                    .unwrap_or_else(|_| "6400".to_string())
                     .parse()
-                    .unwrap_or(8080),
+                    .unwrap_or(6400),
             },
             kafka: KafkaConfig {
                 brokers: env::var("KAFKA_BROKERS")
