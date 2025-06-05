@@ -1,0 +1,19 @@
+{
+  "name": "cli-builder",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "Yuvraj Singh",
+  "type": "module",
+  "bin": {
+    "juspay-cli-builder": "index.js"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "mustache": "^4.2.0"
+  }
+}
