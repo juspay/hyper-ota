@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "sources": ["models"],
+  "maven": {
+    "dependencies": [
+      "software.amazon.smithy:smithy-aws-traits:1.57.1",
+      "software.amazon.smithy.typescript:smithy-aws-typescript-codegen:0.29.0"
+    ]
+  },
+  "projections": {
+    "typescript-sdk": {
+      "plugins": {
+        "typescript-codegen": {
+          "service": "juspay.ota#OTAService",
+          "package": "@juspay/ota",
+          "packageVersion": "0.0.1"
+        }
+      }
+    }
+  }
+}

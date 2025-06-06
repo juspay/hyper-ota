@@ -1,0 +1,29 @@
+program
+  .command("{{{actionName}}} [params...]")
+  .description(`
+Allowed params for {{{actionName}}}:
+  {{{paramDocs}}}
+`)
+  .usage('<action> [params...]')
+  .addHelpText('after', `
+Allowed params for {{{actionName}}}:
+  {{{paramDocs}}}
+`)
+  .action(async (params = []) => {
+
+    const options = params.reduce((acc, kv) => {
+        const [key, val] = kv.split('=');
+        if (key && val !== undefined) acc[key] = val;
+        return acc;
+    }, {});
+
+    try {
+        const command = new {{{cmd}}}(options);
+        const output = await client.send(command);
+        console.log(JSON.stringify(output, null, '\t'));
+        process.exit(0);
+    } catch (err) {
+        console.error("Error executing:", err);
+        process.exit(1);
+    }
+});
