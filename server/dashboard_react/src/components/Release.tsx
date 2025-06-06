@@ -70,6 +70,16 @@ interface PerformanceData {
   rollback_rate: number;
   average_download_time: number;
   average_apply_time: number;
+  changes?: {
+    total_devices: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    download_success_rate: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    download_failure_rate: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    apply_success_rate: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    apply_failure_rate: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    rollback_rate: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    average_download_time: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+    average_apply_time: { change: number; changeType: 'positive' | 'negative' | 'neutral' };
+  };
 }
 
 const Release: React.FC = () => {
@@ -88,6 +98,15 @@ const Release: React.FC = () => {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<'1d' | '7d' | '30d'>('7d');
   const [userTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  
+  // Custom date picker state
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [customDateRange, setCustomDateRange] = useState({
+    start: '',
+    end: '',
+    isCustom: false
+  });
+  const [dateRangeError, setDateRangeError] = useState<string | null>(null);
 
   // Utility function to convert UTC time_slot to user timezone
   const convertToUserTimezone = (utcTimeSlot: string, userTimezone: string): string => {
@@ -106,6 +125,139 @@ const Release: React.FC = () => {
     } catch (error) {
       console.warn('Failed to convert timezone for:', utcTimeSlot, error);
       return utcTimeSlot; // fallback to original
+    }
+  };
+
+  // Helper function to calculate percentage change
+  const calculatePercentageChange = (current: number, previous: number): { change: number; changeType: 'positive' | 'negative' | 'neutral' } => {
+    if (previous === 0) {
+      if (current === 0) {
+        return { change: 0, changeType: 'neutral' };
+      }
+      return { change: 100, changeType: 'positive' };
+    }
+    
+    const change = ((current - previous) / previous) * 100;
+    
+    if (Math.abs(change) < 0.1) {
+      return { change: 0, changeType: 'neutral' };
+    }
+    
+    return {
+      change: Math.abs(change),
+      changeType: change > 0 ? 'positive' : 'negative'
+    };
+  };
+
+  // Helper function to determine if higher is better for a metric
+  const isHigherBetter = (metricType: string): boolean => {
+    const higherIsBetter = [
+      'total_devices',
+      'download_success_rate',
+      'apply_success_rate',
+      'update_available_rate'
+    ];
+    
+    const lowerIsBetter = [
+      'download_failure_rate',
+      'apply_failure_rate',
+      'rollback_rate',
+      'average_download_time',
+      'average_apply_time'
+    ];
+    
+    if (higherIsBetter.includes(metricType)) return true;
+    if (lowerIsBetter.includes(metricType)) return false;
+    return true; // default to higher is better
+  };
+
+  // Helper function to get change type considering if higher is better
+  const getChangeTypeForMetric = (current: number, previous: number, metricType: string): { change: number; changeType: 'positive' | 'negative' | 'neutral' } => {
+    const rawChange = calculatePercentageChange(current, previous);
+    
+    if (rawChange.changeType === 'neutral') {
+      return rawChange;
+    }
+    
+    const higherBetter = isHigherBetter(metricType);
+    
+    if (higherBetter) {
+      return rawChange; // Keep original: positive = good, negative = bad
+    } else {
+      // Invert: positive change in bad metrics = bad, negative change = good
+      return {
+        change: rawChange.change,
+        changeType: rawChange.changeType === 'positive' ? 'negative' : 'positive'
+      };
+    }
+  };
+
+  // Custom date picker utility functions
+  const formatDateForInput = (date: Date): string => {
+    return date.toISOString().split('T')[0];
+  };
+
+  const formatDateRange = (startDate: string, endDate: string): string => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const options: Intl.DateTimeFormatOptions = { 
+      month: 'short', 
+      day: 'numeric',
+      year: start.getFullYear() !== end.getFullYear() ? 'numeric' : undefined
+    };
+    
+    if (startDate === endDate) {
+      return start.toLocaleDateString('en-US', { ...options, year: 'numeric' });
+    }
+    
+    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
+  };
+
+  const isSingleDay = (startDate: string, endDate: string): boolean => {
+    return startDate === endDate;
+  };
+
+  const handleCustomDateChange = (field: 'start' | 'end', value: string) => {
+    setDateRangeError(null);
+    const newRange = { ...customDateRange, [field]: value };
+    
+    if (field === 'start' && newRange.end && value > newRange.end) {
+      setDateRangeError('Start date cannot be after end date');
+      return;
+    }
+    
+    if (field === 'end' && newRange.start && value < newRange.start) {
+      setDateRangeError('End date cannot be before start date');
+      return;
+    }
+    
+    // Check 3-month limit
+    if (newRange.start && newRange.end) {
+      const start = new Date(newRange.start);
+      const end = new Date(newRange.end);
+      const diffInMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      
+      if (diffInMonths > 3) {
+        setDateRangeError('Date range cannot exceed 3 months');
+        return;
+      }
+    }
+    
+    setCustomDateRange(newRange);
+  };
+
+  const handleApplyCustomRange = () => {
+    if (!customDateRange.start || !customDateRange.end) {
+      setDateRangeError('Please select both start and end dates');
+      return;
+    }
+    
+    setCustomDateRange(prev => ({ ...prev, isCustom: true }));
+    setShowCustomDatePicker(false);
+    
+    // Trigger analytics refresh with custom date range
+    if (releaseData && showAnalytics) {
+      fetchAnalyticsData();
     }
   };
 
@@ -134,23 +286,43 @@ const Release: React.FC = () => {
       setAnalyticsError(null);
 
       // Determine interval and dates based on selected range
-      const interval = dateRange === '1d' ? 'HOUR' : 'DAY';
-      const now = new Date();
+      let interval: 'HOUR' | 'DAY';
       let startDate: Date;
-      let endDate = now;
+      let endDate: Date;
+      let effectiveDateRange: '1d' | '7d' | '30d' | 'custom';
 
-      switch (dateRange) {
-        case '1d':
-          startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-          break;
-        case '7d':
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
-          break;
-        case '30d':
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
-          break;
-        default:
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (customDateRange.isCustom && customDateRange.start && customDateRange.end) {
+        // Handle custom date range
+        startDate = new Date(customDateRange.start);
+        endDate = new Date(customDateRange.end);
+        
+        // Set end date to end of day (23:59:59) to include the full day
+        endDate.setHours(23, 59, 59, 999);
+        
+        // Determine interval based on whether it's a single day or date range
+        const isSingle = isSingleDay(customDateRange.start, customDateRange.end);
+        interval = isSingle ? 'HOUR' : 'DAY';
+        effectiveDateRange = 'custom';
+      } else {
+        // Handle preset date ranges
+        interval = dateRange === '1d' ? 'HOUR' : 'DAY';
+        const now = new Date();
+        endDate = now;
+        effectiveDateRange = dateRange;
+
+        switch (dateRange) {
+          case '1d':
+            startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+            break;
+          case '7d':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+            break;
+          case '30d':
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+            break;
+          default:
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        }
       }
 
       // Prepare filters for analytics service
@@ -159,10 +331,10 @@ const Release: React.FC = () => {
         org_id: org,
         app_id: app,
         release_id: releaseData.package.version,
-        date_range: dateRange,
+        date_range: effectiveDateRange,
         start_date: startDate,
         end_date: endDate,
-        interval: interval as 'HOUR' | 'DAY'
+        interval: interval
       };
 
       // Check if analytics service is available
@@ -172,12 +344,12 @@ const Release: React.FC = () => {
         throw new Error("Analytics service is unavailable. Please check if the analytics microservice is running.");
       }
 
-      // Fetch adoption metrics using analytics service
-      const adoptionMetrics = await analyticsService.getAdoptionMetrics(filters);
+      // Fetch adoption metrics with comparison using analytics service
+      const adoptionComparison = await analyticsService.getAdoptionMetricsWithComparison(filters);
       
-      // Convert timezone for adoption data if needed
-      let processedAdoptionData = adoptionMetrics.time_breakdown || [];
-      if (dateRange === '1d' && processedAdoptionData.length > 0) {
+      // Convert timezone for adoption data if needed (for hourly data)
+      let processedAdoptionData = adoptionComparison.current.time_breakdown || [];
+      if (interval === 'HOUR' && processedAdoptionData.length > 0) {
         processedAdoptionData = processedAdoptionData.map(item => ({
           ...item,
           time_slot: convertToUserTimezone(item.time_slot, userTimezone)
@@ -186,11 +358,11 @@ const Release: React.FC = () => {
       
       setAdoptionData(processedAdoptionData);
 
-      // Fetch performance metrics using analytics service
-      const performanceMetrics = await analyticsService.getPerformanceMetrics(filters);
+      // Fetch performance metrics with comparison using analytics service
+      const performanceComparison = await analyticsService.getPerformanceMetricsWithComparison(filters);
       
-      // Fetch active devices metrics to get total device count
-      const activeDevicesMetrics = await analyticsService.getActiveDevicesMetrics(filters);
+      // Fetch active devices metrics with comparison to get total device count
+      const activeDevicesComparison = await analyticsService.getActiveDevicesMetricsWithComparison(filters);
 
       // Calculate rates from processed adoption data (with fallback for empty data)
       const totalUpdateChecks = processedAdoptionData.reduce((sum, item) => sum + item.update_checks, 0);
@@ -201,18 +373,66 @@ const Release: React.FC = () => {
       const totalApplyFailures = processedAdoptionData.reduce((sum, item) => sum + item.apply_failures, 0);
       const totalRollbacks = processedAdoptionData.reduce((sum, item) => sum + item.rollbacks_initiated, 0);
 
-      // Transform performance metrics to match our PerformanceData interface
-      const transformedPerformanceData = {
-        total_devices: activeDevicesMetrics.total_active_devices || 0,
+      // Calculate previous period rates for comparison
+      const prevTotalUpdateChecks = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.update_checks, 0) || 0;
+      const prevTotalUpdateAvailable = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.update_available, 0) || 0;
+      const prevTotalDownloadSuccess = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.download_success, 0) || 0;
+      const prevTotalDownloadFailures = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.download_failures, 0) || 0;
+      const prevTotalApplySuccess = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.apply_success, 0) || 0;
+      const prevTotalApplyFailures = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.apply_failures, 0) || 0;
+      const prevTotalRollbacks = adoptionComparison.previous.time_breakdown?.reduce((sum, item) => sum + item.rollbacks_initiated, 0) || 0;
+
+      // Current period rates
+      const currentRates = {
+        total_devices: activeDevicesComparison.current.total_active_devices || 0,
         check_for_update_rate: totalUpdateChecks > 0 ? totalUpdateAvailable / totalUpdateChecks : 0,
         update_available_rate: totalUpdateChecks > 0 ? totalUpdateAvailable / totalUpdateChecks : 0,
         download_success_rate: (totalDownloadSuccess + totalDownloadFailures) > 0 ? totalDownloadSuccess / (totalDownloadSuccess + totalDownloadFailures) : 0,
         download_failure_rate: (totalDownloadSuccess + totalDownloadFailures) > 0 ? totalDownloadFailures / (totalDownloadSuccess + totalDownloadFailures) : 0,
         apply_success_rate: (totalApplySuccess + totalApplyFailures) > 0 ? totalApplySuccess / (totalApplySuccess + totalApplyFailures) : 0,
         apply_failure_rate: (totalApplySuccess + totalApplyFailures) > 0 ? totalApplyFailures / (totalApplySuccess + totalApplyFailures) : 0,
-        rollback_rate: activeDevicesMetrics.total_active_devices > 0 ? totalRollbacks / activeDevicesMetrics.total_active_devices : 0,
-        average_download_time: performanceMetrics.avg_download_time_ms || 0,
-        average_apply_time: performanceMetrics.avg_apply_time_ms || 0
+        rollback_rate: activeDevicesComparison.current.total_active_devices > 0 ? totalRollbacks / activeDevicesComparison.current.total_active_devices : 0,
+        average_download_time: performanceComparison.current.avg_download_time_ms || 0,
+        average_apply_time: performanceComparison.current.avg_apply_time_ms || 0
+      };
+
+      // Previous period rates
+      const previousRates = {
+        total_devices: activeDevicesComparison.previous.total_active_devices || 0,
+        check_for_update_rate: prevTotalUpdateChecks > 0 ? prevTotalUpdateAvailable / prevTotalUpdateChecks : 0,
+        update_available_rate: prevTotalUpdateChecks > 0 ? prevTotalUpdateAvailable / prevTotalUpdateChecks : 0,
+        download_success_rate: (prevTotalDownloadSuccess + prevTotalDownloadFailures) > 0 ? prevTotalDownloadSuccess / (prevTotalDownloadSuccess + prevTotalDownloadFailures) : 0,
+        download_failure_rate: (prevTotalDownloadSuccess + prevTotalDownloadFailures) > 0 ? prevTotalDownloadFailures / (prevTotalDownloadSuccess + prevTotalDownloadFailures) : 0,
+        apply_success_rate: (prevTotalApplySuccess + prevTotalApplyFailures) > 0 ? prevTotalApplySuccess / (prevTotalApplySuccess + prevTotalApplyFailures) : 0,
+        apply_failure_rate: (prevTotalApplySuccess + prevTotalApplyFailures) > 0 ? prevTotalApplyFailures / (prevTotalApplySuccess + prevTotalApplyFailures) : 0,
+        rollback_rate: activeDevicesComparison.previous.total_active_devices > 0 ? prevTotalRollbacks / activeDevicesComparison.previous.total_active_devices : 0,
+        average_download_time: performanceComparison.previous.avg_download_time_ms || 0,
+        average_apply_time: performanceComparison.previous.avg_apply_time_ms || 0
+      };
+
+      // Transform performance metrics to match our PerformanceData interface with changes
+      const transformedPerformanceData = {
+        total_devices: currentRates.total_devices,
+        check_for_update_rate: currentRates.check_for_update_rate,
+        update_available_rate: currentRates.update_available_rate,
+        download_success_rate: currentRates.download_success_rate,
+        download_failure_rate: currentRates.download_failure_rate,
+        apply_success_rate: currentRates.apply_success_rate,
+        apply_failure_rate: currentRates.apply_failure_rate,
+        rollback_rate: currentRates.rollback_rate,
+        average_download_time: currentRates.average_download_time,
+        average_apply_time: currentRates.average_apply_time,
+        // Add comparison data
+        changes: {
+          total_devices: getChangeTypeForMetric(currentRates.total_devices, previousRates.total_devices, 'total_devices'),
+          download_success_rate: getChangeTypeForMetric(currentRates.download_success_rate, previousRates.download_success_rate, 'download_success_rate'),
+          download_failure_rate: getChangeTypeForMetric(currentRates.download_failure_rate, previousRates.download_failure_rate, 'download_failure_rate'),
+          apply_success_rate: getChangeTypeForMetric(currentRates.apply_success_rate, previousRates.apply_success_rate, 'apply_success_rate'),
+          apply_failure_rate: getChangeTypeForMetric(currentRates.apply_failure_rate, previousRates.apply_failure_rate, 'apply_failure_rate'),
+          rollback_rate: getChangeTypeForMetric(currentRates.rollback_rate, previousRates.rollback_rate, 'rollback_rate'),
+          average_download_time: getChangeTypeForMetric(currentRates.average_download_time, previousRates.average_download_time, 'average_download_time'),
+          average_apply_time: getChangeTypeForMetric(currentRates.average_apply_time, previousRates.average_apply_time, 'average_apply_time'),
+        }
       };
 
       setPerformanceData(transformedPerformanceData);
@@ -223,7 +443,7 @@ const Release: React.FC = () => {
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [org, app, releaseData?.package?.version, dateRange, userTimezone]);
+  }, [org, app, releaseData?.package?.version, dateRange, userTimezone, customDateRange]);
 
   useEffect(() => {
     fetchReleaseData(selectedVersion || undefined);
@@ -358,27 +578,106 @@ const Release: React.FC = () => {
                 </span>
               </h3>
 
-              {/* Date Range Selector */}
-              <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+              {/* Date Range Selector with Custom Date Picker */}
+              <div className="mb-6 space-y-4">
                 <div className="flex items-center gap-2">
                   <Calendar size={16} className="text-white/60" />
                   <span className="text-sm font-medium text-white/80">Time Range:</span>
                 </div>
-                <div className="flex items-center bg-white/10 backdrop-blur rounded-xl border border-white/20 p-1">
-                  {(['1d', '7d', '30d'] as const).map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setDateRange(range)}
-                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                        dateRange === range
-                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
-                          : 'text-white/70 hover:text-white hover:bg-white/10'
-                      }`}
-                    >
-                      {range === '1d' ? 'Last 24 Hours' : range === '7d' ? 'Last 7 Days' : 'Last 30 Days'}
-                    </button>
-                  ))}
+                
+                {/* Preset Range Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center bg-white/10 backdrop-blur rounded-xl border border-white/20 p-1">
+                    {(['1d', '7d', '30d'] as const).map((range) => (
+                      <button
+                        key={range}
+                        onClick={() => {
+                          setDateRange(range);
+                          setCustomDateRange({ start: '', end: '', isCustom: false });
+                        }}
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                          dateRange === range && !customDateRange.isCustom
+                            ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
+                            : 'text-white/70 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {range === '1d' ? 'Last 24 Hours' : range === '7d' ? 'Last 7 Days' : 'Last 30 Days'}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Custom Date Range Toggle */}
+                  <button
+                    onClick={() => setShowCustomDatePicker(!showCustomDatePicker)}
+                    className={`px-4 py-2 text-sm font-medium rounded-xl border transition-all duration-200 ${
+                      customDateRange.isCustom
+                        ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white border-purple-400 shadow-lg shadow-purple-500/20'
+                        : 'bg-white/10 border-white/20 text-white/70 hover:text-white hover:bg-white/20'
+                    }`}
+                  >
+                    Custom Range
+                  </button>
                 </div>
+                
+                {/* Custom Date Picker */}
+                {showCustomDatePicker && (
+                  <div className="bg-white/10 backdrop-blur rounded-xl border border-white/20 p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-white/80 mb-2">
+                          Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={customDateRange.start}
+                          onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                          max={formatDateForInput(new Date())}
+                          min={formatDateForInput(new Date(Date.now() - 3 * 30 * 24 * 60 * 60 * 1000))}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-white/80 mb-2">
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={customDateRange.end}
+                          onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                          max={formatDateForInput(new Date())}
+                          min={customDateRange.start || formatDateForInput(new Date(Date.now() - 3 * 30 * 24 * 60 * 60 * 1000))}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                        />
+                      </div>
+                    </div>
+                    
+                    {customDateRange.start && customDateRange.end && (
+                      <div className="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10">
+                        <div className="text-sm text-white/70">
+                          Selected: {formatDateRange(customDateRange.start, customDateRange.end)}
+                          {isSingleDay(customDateRange.start, customDateRange.end) && (
+                            <span className="ml-2 px-2 py-1 bg-cyan-500/20 text-cyan-300 rounded-md text-xs">
+                              Hourly View
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={handleApplyCustomRange}
+                          className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg text-sm font-medium transition-all duration-200 shadow-lg shadow-emerald-500/20"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                    
+                    {dateRangeError && (
+                      <div className="flex items-center gap-2 text-red-300 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                        <AlertCircle size={16} />
+                        <span>{dateRangeError}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               
               {analyticsLoading && (
@@ -419,37 +718,43 @@ const Release: React.FC = () => {
                         {
                           title: "Total Devices",
                           value: performanceData.total_devices.toLocaleString(),
-                          change: null,
+                          change: performanceData.changes?.total_devices.change,
+                          changeType: performanceData.changes?.total_devices.changeType,
                           icon: Smartphone
                         },
                         {
                           title: "Check for Update Rate",
                           value: `${(performanceData.check_for_update_rate * 100).toFixed(1)}%`,
-                          change: null,
+                          change: performanceData.changes?.total_devices.change, // Using total_devices as proxy since we don't track this separately
+                          changeType: performanceData.changes?.total_devices.changeType,
                           icon: RefreshCw
                         },
                         {
                           title: "Download Success Rate",
                           value: `${(performanceData.download_success_rate * 100).toFixed(1)}%`,
-                          change: null,
+                          change: performanceData.changes?.download_success_rate.change,
+                          changeType: performanceData.changes?.download_success_rate.changeType,
                           icon: Download
                         },
                         {
                           title: "Apply Success Rate",
                           value: `${(performanceData.apply_success_rate * 100).toFixed(1)}%`,
-                          change: null,
+                          change: performanceData.changes?.apply_success_rate.change,
+                          changeType: performanceData.changes?.apply_success_rate.changeType,
                           icon: CheckCircle
                         },
                         {
                           title: "Rollback Rate",
                           value: `${(performanceData.rollback_rate * 100).toFixed(1)}%`,
-                          change: null,
+                          change: performanceData.changes?.rollback_rate.change,
+                          changeType: performanceData.changes?.rollback_rate.changeType,
                           icon: RotateCcw
                         },
                         {
                           title: "Avg Download Time",
                           value: `${(performanceData.average_download_time / 1000).toFixed(1)}s`,
-                          change: null,
+                          change: performanceData.changes?.average_download_time.change,
+                          changeType: performanceData.changes?.average_download_time.changeType,
                           icon: Clock
                         }
                       ]}

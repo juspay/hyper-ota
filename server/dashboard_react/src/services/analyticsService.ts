@@ -238,6 +238,208 @@ class AnalyticsService {
     
     return response.json();
   }
+
+  // Helper method to calculate previous period dates
+  private calculatePreviousPeriodDates(currentStartDate: Date, currentEndDate: Date, dateRange: string): { startDate: Date; endDate: Date } {
+    const currentDuration = currentEndDate.getTime() - currentStartDate.getTime();
+    
+    if (dateRange === 'custom') {
+      // For custom ranges, go back by the same duration
+      const previousEndDate = new Date(currentStartDate.getTime() - 1); // End just before current period starts
+      const previousStartDate = new Date(previousEndDate.getTime() - currentDuration);
+      return { startDate: previousStartDate, endDate: previousEndDate };
+    }
+    
+    // For preset ranges, calculate standard previous periods
+    switch (dateRange) {
+      case '1d':
+        return {
+          startDate: new Date(currentStartDate.getTime() - 24 * 60 * 60 * 1000),
+          endDate: new Date(currentEndDate.getTime() - 24 * 60 * 60 * 1000)
+        };
+      case '7d':
+        return {
+          startDate: new Date(currentStartDate.getTime() - 7 * 24 * 60 * 60 * 1000),
+          endDate: new Date(currentEndDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+        };
+      case '30d':
+        return {
+          startDate: new Date(currentStartDate.getTime() - 30 * 24 * 60 * 60 * 1000),
+          endDate: new Date(currentEndDate.getTime() - 30 * 24 * 60 * 60 * 1000)
+        };
+      default:
+        return {
+          startDate: new Date(currentStartDate.getTime() - 7 * 24 * 60 * 60 * 1000),
+          endDate: new Date(currentEndDate.getTime() - 7 * 24 * 60 * 60 * 1000)
+        };
+    }
+  }
+
+  // Method to get adoption metrics with previous period comparison
+  async getAdoptionMetricsWithComparison(filters: Partial<AnalyticsFilters>): Promise<{
+    current: AdoptionMetrics;
+    previous: AdoptionMetrics;
+  }> {
+    // Get current period data
+    const currentMetrics = await this.getAdoptionMetrics(filters);
+    
+    // Calculate previous period dates
+    let currentStartDate: Date;
+    let currentEndDate: Date;
+    
+    if (filters.date_range === 'custom' && filters.start_date && filters.end_date) {
+      currentStartDate = filters.start_date;
+      currentEndDate = filters.end_date;
+    } else {
+      // Calculate dates based on date_range
+      const now = new Date();
+      currentEndDate = now;
+      
+      switch (filters.date_range) {
+        case '1d':
+          currentStartDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case '7d':
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30d':
+          currentStartDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      }
+    }
+    
+    const previousDates = this.calculatePreviousPeriodDates(currentStartDate, currentEndDate, filters.date_range || '7d');
+    
+    // Create filters for previous period
+    const previousFilters = {
+      ...filters,
+      start_date: previousDates.startDate,
+      end_date: previousDates.endDate,
+      date_range: 'custom' as const
+    };
+    
+    // Get previous period data
+    const previousMetrics = await this.getAdoptionMetrics(previousFilters);
+    
+    return {
+      current: currentMetrics,
+      previous: previousMetrics
+    };
+  }
+
+  // Method to get performance metrics with previous period comparison
+  async getPerformanceMetricsWithComparison(filters: Partial<AnalyticsFilters>): Promise<{
+    current: PerformanceMetrics;
+    previous: PerformanceMetrics;
+  }> {
+    // Get current period data
+    const currentMetrics = await this.getPerformanceMetrics(filters);
+    
+    // Calculate previous period filters based on the date range
+    let previousFilters: Partial<AnalyticsFilters>;
+    
+    if (filters.date_range === 'custom' && filters.start_date && filters.end_date) {
+      const previousDates = this.calculatePreviousPeriodDates(filters.start_date, filters.end_date, 'custom');
+      previousFilters = {
+        ...filters,
+        start_date: previousDates.startDate,
+        end_date: previousDates.endDate,
+        date_range: 'custom' as const
+      };
+    } else {
+      // For preset ranges, use the same range but for previous period
+      const now = new Date();
+      let currentStartDate: Date;
+      
+      switch (filters.date_range) {
+        case '1d':
+          currentStartDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case '7d':
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30d':
+          currentStartDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      }
+      
+      const previousDates = this.calculatePreviousPeriodDates(currentStartDate, now, filters.date_range || '7d');
+      previousFilters = {
+        ...filters,
+        start_date: previousDates.startDate,
+        end_date: previousDates.endDate,
+        date_range: 'custom' as const
+      };
+    }
+    
+    // Get previous period data
+    const previousMetrics = await this.getPerformanceMetrics(previousFilters);
+    
+    return {
+      current: currentMetrics,
+      previous: previousMetrics
+    };
+  }
+
+  // Method to get active devices metrics with previous period comparison
+  async getActiveDevicesMetricsWithComparison(filters: Partial<AnalyticsFilters>): Promise<{
+    current: ActiveDevicesMetrics;
+    previous: ActiveDevicesMetrics;
+  }> {
+    // Get current period data
+    const currentMetrics = await this.getActiveDevicesMetrics(filters);
+    
+    // For active devices, we need to modify the days parameter for previous period
+    let previousFilters: Partial<AnalyticsFilters>;
+    
+    if (filters.date_range === 'custom' && filters.start_date && filters.end_date) {
+      const previousDates = this.calculatePreviousPeriodDates(filters.start_date, filters.end_date, 'custom');
+      previousFilters = {
+        ...filters,
+        start_date: previousDates.startDate,
+        end_date: previousDates.endDate,
+        date_range: 'custom' as const
+      };
+    } else {
+      // For preset ranges, calculate previous period dates
+      const now = new Date();
+      let currentStartDate: Date;
+      
+      switch (filters.date_range) {
+        case '1d':
+          currentStartDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case '7d':
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30d':
+          currentStartDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          currentStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      }
+      
+      const previousDates = this.calculatePreviousPeriodDates(currentStartDate, now, filters.date_range || '7d');
+      previousFilters = {
+        ...filters,
+        start_date: previousDates.startDate,
+        end_date: previousDates.endDate,
+        date_range: 'custom' as const
+      };
+    }
+    
+    // Get previous period data
+    const previousMetrics = await this.getActiveDevicesMetrics(previousFilters);
+    
+    return {
+      current: currentMetrics,
+      previous: previousMetrics
+    };
+  }
 }
 
 export const analyticsService = new AnalyticsService();
