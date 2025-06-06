@@ -476,7 +476,7 @@ const Analytics: React.FC<AnalyticsProps> = () => {
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <AdoptionChart data={adoptionData} interval={interval} />
-              <TimeToAdoptionChart data={adoptionData} />
+              <TimeToAdoptionChart data={adoptionData} interval={interval} />
             </div>
           </div>
 
@@ -486,8 +486,8 @@ const Analytics: React.FC<AnalyticsProps> = () => {
               Performance & Success Rates
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <PerformanceChart data={adoptionData} />
-              <RollbackChart data={adoptionData} />
+              <PerformanceChart data={adoptionData} interval={interval} />
+              <RollbackChart data={adoptionData} interval={'HOUR'} />
             </div>
           </div>
 

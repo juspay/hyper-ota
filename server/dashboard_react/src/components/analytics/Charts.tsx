@@ -34,6 +34,7 @@ interface LineChartProps extends ChartProps {
   xAxisKey: string;
   showGrid?: boolean;
   showLegend?: boolean;
+  interval?: 'HOUR' | 'DAY';
 }
 
 interface AreaChartProps extends ChartProps {
@@ -45,6 +46,7 @@ interface AreaChartProps extends ChartProps {
   }[];
   xAxisKey: string;
   stacked?: boolean;
+  interval?: 'HOUR' | 'DAY';
 }
 
 interface BarChartProps extends ChartProps {
@@ -67,12 +69,15 @@ interface PieChartProps extends ChartProps {
 }
 
 // Custom tooltip for time-based charts
-const TimeTooltip = ({ active, payload, label }: any) => {
+const TimeTooltip = ({ active, payload, label, interval }: any) => {
   if (active && payload && payload.length) {
+    // Show time only for "Last 24 Hours" (HOUR interval) and date only for others (DAY interval)
+    const formatPattern = interval === 'HOUR' ? 'MMM dd, yyyy hh:mm aaaaa\'m\'' : 'MMM dd, yyyy';
+    
     return (
       <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg p-3 shadow-lg">
         <p className="font-medium text-gray-900 mb-2">
-          {format(new Date(label), 'MMM dd, yyyy HH:mm')}
+          {format(new Date(label), formatPattern)}
         </p>
         {payload.map((entry: any, index: number) => (
           <div key={index} className="flex items-center gap-2 text-sm">
@@ -120,6 +125,7 @@ export const AdoptionLineChart: React.FC<LineChartProps> = ({
   showGrid = true,
   showLegend = true,
   className = '',
+  interval = 'DAY',
 }) => {
   return (
     <div className={`w-full ${className}`}>
@@ -133,7 +139,7 @@ export const AdoptionLineChart: React.FC<LineChartProps> = ({
             fontSize={12}
           />
           <YAxis stroke="#6b7280" fontSize={12} />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           {showLegend && <Legend />}
           {lines.map((line, index) => (
             <Line
@@ -160,6 +166,7 @@ export const AdoptionAreaChart: React.FC<AreaChartProps> = ({
   height = 300,
   stacked = false,
   className = '',
+  interval = 'DAY',
 }) => {
   return (
     <div className={`w-full ${className}`}>
@@ -173,7 +180,7 @@ export const AdoptionAreaChart: React.FC<AreaChartProps> = ({
             fontSize={12}
           />
           <YAxis stroke="#6b7280" fontSize={12} />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           <Legend />
           {areas.map((area, index) => (
             <Area
@@ -316,7 +323,7 @@ export const AdoptionChart: React.FC<AdoptionChartProps> = ({ data, interval }) 
             className="text-sm"
           />
           <YAxis className="text-sm" />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           <Legend />
           <Area
             type="monotone"
@@ -342,9 +349,17 @@ export const AdoptionChart: React.FC<AdoptionChartProps> = ({ data, interval }) 
   );
 };
 
-export const PerformanceChart: React.FC<{ data: any[] }> = ({ data }) => {
+interface PerformanceChartProps {
+  data: any[];
+  interval: 'HOUR' | 'DAY';
+}
+
+export const PerformanceChart: React.FC<PerformanceChartProps> = ({ data, interval }) => {
   const formatXAxis = (tickItem: string) => {
-    return format(new Date(tickItem), 'MMM dd');
+    const date = new Date(tickItem);
+    return interval === 'HOUR' 
+      ? format(date, 'HH:mm')
+      : format(date, 'MMM dd');
   };
 
   return (
@@ -359,7 +374,7 @@ export const PerformanceChart: React.FC<{ data: any[] }> = ({ data }) => {
             className="text-sm"
           />
           <YAxis className="text-sm" />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           <Legend />
           <Bar dataKey="download_success" fill="#10b981" name="Download Success" />
           <Bar dataKey="download_failures" fill="#ef4444" name="Download Failures" />
@@ -371,7 +386,12 @@ export const PerformanceChart: React.FC<{ data: any[] }> = ({ data }) => {
   );
 };
 
-export const TimeToAdoptionChart: React.FC<{ data: any[] }> = ({ data }) => {
+interface TimeToAdoptionChartProps {
+  data: any[];
+  interval: 'HOUR' | 'DAY';
+}
+
+export const TimeToAdoptionChart: React.FC<TimeToAdoptionChartProps> = ({ data, interval }) => {
   // Calculate cumulative adoption
   const cumulativeData = data.map((item, index) => {
     const cumulativeSuccess = data.slice(0, index + 1)
@@ -384,7 +404,10 @@ export const TimeToAdoptionChart: React.FC<{ data: any[] }> = ({ data }) => {
   });
 
   const formatXAxis = (tickItem: string) => {
-    return format(new Date(tickItem), 'MMM dd');
+    const date = new Date(tickItem);
+    return interval === 'HOUR' 
+      ? format(date, 'HH:mm')
+      : format(date, 'MMM dd');
   };
 
   return (
@@ -399,7 +422,7 @@ export const TimeToAdoptionChart: React.FC<{ data: any[] }> = ({ data }) => {
             className="text-sm"
           />
           <YAxis className="text-sm" />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           <Legend />
           <Line
             type="monotone"
@@ -415,9 +438,17 @@ export const TimeToAdoptionChart: React.FC<{ data: any[] }> = ({ data }) => {
   );
 };
 
-export const RollbackChart: React.FC<{ data: any[] }> = ({ data }) => {
+interface RollbackChartProps {
+  data: any[];
+  interval: 'HOUR' | 'DAY';
+}
+
+export const RollbackChart: React.FC<RollbackChartProps> = ({ data, interval }) => {
   const formatXAxis = (tickItem: string) => {
-    return format(new Date(tickItem), 'MMM dd');
+    const date = new Date(tickItem);
+    return interval === 'HOUR' 
+      ? format(date, 'HH:mm')
+      : format(date, 'MMM dd');
   };
 
   return (
@@ -432,7 +463,7 @@ export const RollbackChart: React.FC<{ data: any[] }> = ({ data }) => {
             className="text-sm"
           />
           <YAxis className="text-sm" />
-          <Tooltip content={<TimeTooltip />} />
+          <Tooltip content={(props) => <TimeTooltip {...props} interval={interval} />} />
           <Legend />
           <Bar dataKey="rollbacks_initiated" fill="#ef4444" name="Rollbacks Initiated" />
           <Bar dataKey="rollbacks_completed" fill="#f59e0b" name="Rollbacks Completed" />

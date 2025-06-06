@@ -86,6 +86,28 @@ const Release: React.FC = () => {
   const [adoptionData, setAdoptionData] = useState<AdoptionData[]>([]);
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<'1d' | '7d' | '30d'>('7d');
+  const [userTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+  // Utility function to convert UTC time_slot to user timezone
+  const convertToUserTimezone = (utcTimeSlot: string, userTimezone: string): string => {
+    try {
+      const utcDate = new Date(utcTimeSlot);
+      return utcDate.toLocaleString('en-CA', { 
+        timeZone: userTimezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(', ', 'T');
+    } catch (error) {
+      console.warn('Failed to convert timezone for:', utcTimeSlot, error);
+      return utcTimeSlot; // fallback to original
+    }
+  };
 
   const fetchReleaseData = useCallback(async (version?: number) => {
     try {
@@ -111,14 +133,36 @@ const Release: React.FC = () => {
       setAnalyticsLoading(true);
       setAnalyticsError(null);
 
+      // Determine interval and dates based on selected range
+      const interval = dateRange === '1d' ? 'HOUR' : 'DAY';
+      const now = new Date();
+      let startDate: Date;
+      let endDate = now;
+
+      switch (dateRange) {
+        case '1d':
+          startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+          break;
+        case '7d':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+          break;
+        case '30d':
+          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+          break;
+        default:
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      }
+
       // Prepare filters for analytics service
       const filters = {
         tenant_id: "default", // You may want to get this from context or props
         org_id: org,
         app_id: app,
         release_id: releaseData.package.version,
-        date_range: '7d' as const,
-        interval: 'DAY' as const
+        date_range: dateRange,
+        start_date: startDate,
+        end_date: endDate,
+        interval: interval as 'HOUR' | 'DAY'
       };
 
       // Check if analytics service is available
@@ -130,7 +174,17 @@ const Release: React.FC = () => {
 
       // Fetch adoption metrics using analytics service
       const adoptionMetrics = await analyticsService.getAdoptionMetrics(filters);
-      setAdoptionData(adoptionMetrics.time_breakdown || []);
+      
+      // Convert timezone for adoption data if needed
+      let processedAdoptionData = adoptionMetrics.time_breakdown || [];
+      if (dateRange === '1d' && processedAdoptionData.length > 0) {
+        processedAdoptionData = processedAdoptionData.map(item => ({
+          ...item,
+          time_slot: convertToUserTimezone(item.time_slot, userTimezone)
+        }));
+      }
+      
+      setAdoptionData(processedAdoptionData);
 
       // Fetch performance metrics using analytics service
       const performanceMetrics = await analyticsService.getPerformanceMetrics(filters);
@@ -138,15 +192,14 @@ const Release: React.FC = () => {
       // Fetch active devices metrics to get total device count
       const activeDevicesMetrics = await analyticsService.getActiveDevicesMetrics(filters);
 
-      // Calculate rates from adoption data (with fallback for empty data)
-      const adoptionData = adoptionMetrics.time_breakdown || [];
-      const totalUpdateChecks = adoptionData.reduce((sum, item) => sum + item.update_checks, 0);
-      const totalUpdateAvailable = adoptionData.reduce((sum, item) => sum + item.update_available, 0);
-      const totalDownloadSuccess = adoptionData.reduce((sum, item) => sum + item.download_success, 0);
-      const totalDownloadFailures = adoptionData.reduce((sum, item) => sum + item.download_failures, 0);
-      const totalApplySuccess = adoptionData.reduce((sum, item) => sum + item.apply_success, 0);
-      const totalApplyFailures = adoptionData.reduce((sum, item) => sum + item.apply_failures, 0);
-      const totalRollbacks = adoptionData.reduce((sum, item) => sum + item.rollbacks_initiated, 0);
+      // Calculate rates from processed adoption data (with fallback for empty data)
+      const totalUpdateChecks = processedAdoptionData.reduce((sum, item) => sum + item.update_checks, 0);
+      const totalUpdateAvailable = processedAdoptionData.reduce((sum, item) => sum + item.update_available, 0);
+      const totalDownloadSuccess = processedAdoptionData.reduce((sum, item) => sum + item.download_success, 0);
+      const totalDownloadFailures = processedAdoptionData.reduce((sum, item) => sum + item.download_failures, 0);
+      const totalApplySuccess = processedAdoptionData.reduce((sum, item) => sum + item.apply_success, 0);
+      const totalApplyFailures = processedAdoptionData.reduce((sum, item) => sum + item.apply_failures, 0);
+      const totalRollbacks = processedAdoptionData.reduce((sum, item) => sum + item.rollbacks_initiated, 0);
 
       // Transform performance metrics to match our PerformanceData interface
       const transformedPerformanceData = {
@@ -170,7 +223,7 @@ const Release: React.FC = () => {
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [org, app, releaseData?.package?.version]);
+  }, [org, app, releaseData?.package?.version, dateRange, userTimezone]);
 
   useEffect(() => {
     fetchReleaseData(selectedVersion || undefined);
@@ -304,6 +357,29 @@ const Release: React.FC = () => {
                   Version {releaseData?.package?.version}
                 </span>
               </h3>
+
+              {/* Date Range Selector */}
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Calendar size={16} className="text-white/60" />
+                  <span className="text-sm font-medium text-white/80">Time Range:</span>
+                </div>
+                <div className="flex items-center bg-white/10 backdrop-blur rounded-xl border border-white/20 p-1">
+                  {(['1d', '7d', '30d'] as const).map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => setDateRange(range)}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                        dateRange === range
+                          ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
+                          : 'text-white/70 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {range === '1d' ? 'Last 24 Hours' : range === '7d' ? 'Last 7 Days' : 'Last 30 Days'}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               {analyticsLoading && (
                 <div className="text-center py-8">
@@ -388,7 +464,7 @@ const Release: React.FC = () => {
                           <TrendingUp size={16} className="mr-2" />
                           Adoption Over Time
                         </h5>
-                        <AdoptionChart data={adoptionData} interval="DAY" />
+                        <AdoptionChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -396,7 +472,7 @@ const Release: React.FC = () => {
                           <BarChart3 size={16} className="mr-2" />
                           Performance Metrics
                         </h5>
-                        <PerformanceChart data={adoptionData} />
+                        <PerformanceChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -404,7 +480,7 @@ const Release: React.FC = () => {
                           <Clock size={16} className="mr-2" />
                           Time to Adoption
                         </h5>
-                        <TimeToAdoptionChart data={adoptionData} />
+                        <TimeToAdoptionChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -412,7 +488,7 @@ const Release: React.FC = () => {
                           <RotateCcw size={16} className="mr-2" />
                           Rollback Analysis
                         </h5>
-                        <RollbackChart data={adoptionData} />
+                        <RollbackChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
                       </div>
                     </div>
                   )}
