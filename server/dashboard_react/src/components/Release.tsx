@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import ReactJson from "@uiw/react-json-view";
 import axios from "../api/axios";
@@ -13,6 +13,7 @@ import {
 import { analyticsService } from "../services/analyticsService";
 import { Package, Settings, Calendar, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, BarChart3, Download, CheckCircle, RotateCcw, Clock, TrendingUp, Smartphone } from "lucide-react";
 import { vscodeTheme } from '@uiw/react-json-view/vscode';
+import Datepicker from "react-tailwindcss-datepicker";
 
 
 interface ReleaseConfig {
@@ -102,11 +103,31 @@ const Release: React.FC = () => {
   // Custom date picker state
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({
-    start: '',
-    end: '',
+    startDate: null as Date | null,
+    endDate: null as Date | null,
     isCustom: false
   });
   const [dateRangeError, setDateRangeError] = useState<string | null>(null);
+  const datePickerRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close date picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
+        setShowCustomDatePicker(false);
+      }
+    };
+
+    if (showCustomDatePicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showCustomDatePicker]);
+
+  // Helper functions for custom date range (removed duplicates)
 
   // Utility function to convert UTC time_slot to user timezone
   const convertToUserTimezone = (utcTimeSlot: string, userTimezone: string): string => {
@@ -193,71 +214,94 @@ const Release: React.FC = () => {
   };
 
   // Custom date picker utility functions
-  const formatDateForInput = (date: Date): string => {
-    return date.toISOString().split('T')[0];
-  };
-
-  const formatDateRange = (startDate: string, endDate: string): string => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+  const formatDateRange = (startDate: Date, endDate: Date): string => {
     const options: Intl.DateTimeFormatOptions = { 
       month: 'short', 
       day: 'numeric',
-      year: start.getFullYear() !== end.getFullYear() ? 'numeric' : undefined
+      year: startDate.getFullYear() !== endDate.getFullYear() ? 'numeric' : undefined
     };
     
-    if (startDate === endDate) {
-      return start.toLocaleDateString('en-US', { ...options, year: 'numeric' });
+    if (startDate.toDateString() === endDate.toDateString()) {
+      return startDate.toLocaleDateString('en-US', { ...options, year: 'numeric' });
     }
     
-    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
+    return `${startDate.toLocaleDateString('en-US', options)} - ${endDate.toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
   };
 
-  const isSingleDay = (startDate: string, endDate: string): boolean => {
-    return startDate === endDate;
+  const isSingleDay = (startDate: Date, endDate: Date): boolean => {
+    return startDate.toDateString() === endDate.toDateString();
   };
 
-  const handleCustomDateChange = (field: 'start' | 'end', value: string) => {
+  // Helper function to determine chart interval based on current date range
+  const getChartInterval = (): 'HOUR' | 'DAY' => {
+    if (customDateRange.isCustom && customDateRange.startDate && customDateRange.endDate) {
+      // For custom ranges, use hourly if it's a single day, otherwise daily
+      return isSingleDay(customDateRange.startDate, customDateRange.endDate) ? 'HOUR' : 'DAY';
+    } else {
+      // For preset ranges, only 1d uses hourly
+      return dateRange === '1d' ? 'HOUR' : 'DAY';
+    }
+  };
+
+  const handleCustomDateChange = (value: { startDate: Date | null; endDate: Date | null }) => {
     setDateRangeError(null);
-    const newRange = { ...customDateRange, [field]: value };
     
-    if (field === 'start' && newRange.end && value > newRange.end) {
-      setDateRangeError('Start date cannot be after end date');
-      return;
-    }
+    console.log('Custom date change:', {
+      startDate: value.startDate,
+      endDate: value.endDate,
+      startDateISO: value.startDate?.toISOString(),
+      endDateISO: value.endDate?.toISOString()
+    });
     
-    if (field === 'end' && newRange.start && value < newRange.start) {
-      setDateRangeError('End date cannot be before start date');
-      return;
-    }
-    
-    // Check 3-month limit
-    if (newRange.start && newRange.end) {
-      const start = new Date(newRange.start);
-      const end = new Date(newRange.end);
-      const diffInMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    if (value.startDate && value.endDate) {
+      // Check if start date is after end date
+      if (value.startDate > value.endDate) {
+        setDateRangeError('Start date cannot be after end date');
+        return;
+      }
+      
+      // Check 3-month limit
+      const diffInMonths = (value.endDate.getFullYear() - value.startDate.getFullYear()) * 12 + 
+                           (value.endDate.getMonth() - value.startDate.getMonth());
       
       if (diffInMonths > 3) {
         setDateRangeError('Date range cannot exceed 3 months');
         return;
       }
-    }
-    
-    setCustomDateRange(newRange);
-  };
-
-  const handleApplyCustomRange = () => {
-    if (!customDateRange.start || !customDateRange.end) {
-      setDateRangeError('Please select both start and end dates');
-      return;
-    }
-    
-    setCustomDateRange(prev => ({ ...prev, isCustom: true }));
-    setShowCustomDatePicker(false);
-    
-    // Trigger analytics refresh with custom date range
-    if (releaseData && showAnalytics) {
-      fetchAnalyticsData();
+      
+      // Create proper date objects with start of day for startDate and end of day for endDate
+      const normalizedStartDate = new Date(value.startDate);
+      normalizedStartDate.setHours(0, 0, 0, 0); // Start of day
+      
+      const normalizedEndDate = new Date(value.endDate);
+      normalizedEndDate.setHours(23, 59, 59, 999); // End of day
+      
+      console.log('Normalized dates:', {
+        normalizedStartDate: normalizedStartDate.toISOString(),
+        normalizedEndDate: normalizedEndDate.toISOString()
+      });
+      
+      // Automatically apply the custom date range when both dates are selected
+      setCustomDateRange({
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        isCustom: true
+      });
+      
+      // Close the picker
+      setShowCustomDatePicker(false);
+      
+      // Trigger analytics refresh with custom date range
+      if (releaseData && showAnalytics) {
+        fetchAnalyticsData();
+      }
+    } else {
+      // Update the temporary state while user is selecting dates
+      setCustomDateRange({
+        startDate: value.startDate,
+        endDate: value.endDate,
+        isCustom: false
+      });
     }
   };
 
@@ -291,16 +335,16 @@ const Release: React.FC = () => {
       let endDate: Date;
       let effectiveDateRange: '1d' | '7d' | '30d' | 'custom';
 
-      if (customDateRange.isCustom && customDateRange.start && customDateRange.end) {
+      if (customDateRange.isCustom && customDateRange.startDate && customDateRange.endDate) {
         // Handle custom date range
-        startDate = new Date(customDateRange.start);
-        endDate = new Date(customDateRange.end);
+        startDate = new Date(customDateRange.startDate);
+        endDate = new Date(customDateRange.endDate);
         
         // Set end date to end of day (23:59:59) to include the full day
         endDate.setHours(23, 59, 59, 999);
         
-        // Determine interval based on whether it's a single day or date range
-        const isSingle = isSingleDay(customDateRange.start, customDateRange.end);
+        // Check if it's a single day
+        const isSingle = isSingleDay(customDateRange.startDate, customDateRange.endDate);
         interval = isSingle ? 'HOUR' : 'DAY';
         effectiveDateRange = 'custom';
       } else {
@@ -593,7 +637,7 @@ const Release: React.FC = () => {
                         key={range}
                         onClick={() => {
                           setDateRange(range);
-                          setCustomDateRange({ start: '', end: '', isCustom: false });
+                          setCustomDateRange({ startDate: null, endDate: null, isCustom: false });
                         }}
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                           dateRange === range && !customDateRange.isCustom
@@ -606,78 +650,77 @@ const Release: React.FC = () => {
                     ))}
                   </div>
                   
-                  {/* Custom Date Range Toggle */}
-                  <button
-                    onClick={() => setShowCustomDatePicker(!showCustomDatePicker)}
-                    className={`px-4 py-2 text-sm font-medium rounded-xl border transition-all duration-200 ${
-                      customDateRange.isCustom
-                        ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white border-purple-400 shadow-lg shadow-purple-500/20'
-                        : 'bg-white/10 border-white/20 text-white/70 hover:text-white hover:bg-white/20'
-                    }`}
-                  >
-                    Custom Range
-                  </button>
-                </div>
-                
-                {/* Custom Date Picker */}
-                {showCustomDatePicker && (
-                  <div className="bg-white/10 backdrop-blur rounded-xl border border-white/20 p-4 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-white/80 mb-2">
-                          Start Date
-                        </label>
-                        <input
-                          type="date"
-                          value={customDateRange.start}
-                          onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                          max={formatDateForInput(new Date())}
-                          min={formatDateForInput(new Date(Date.now() - 3 * 30 * 24 * 60 * 60 * 1000))}
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-white/80 mb-2">
-                          End Date
-                        </label>
-                        <input
-                          type="date"
-                          value={customDateRange.end}
-                          onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                          max={formatDateForInput(new Date())}
-                          min={customDateRange.start || formatDateForInput(new Date(Date.now() - 3 * 30 * 24 * 60 * 60 * 1000))}
-                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
-                        />
-                      </div>
-                    </div>
+                  {/* Custom Date Range Toggle with Popover */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowCustomDatePicker(!showCustomDatePicker)}
+                      className={`px-4 py-2 text-sm font-medium rounded-xl border transition-all duration-200 ${
+                        customDateRange.isCustom
+                          ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white border-purple-400 shadow-lg shadow-purple-500/20'
+                          : 'bg-white/10 border-white/20 text-white/70 hover:text-white hover:bg-white/20'
+                      }`}
+                    >
+                      {customDateRange.isCustom && customDateRange.startDate && customDateRange.endDate
+                        ? formatDateRange(customDateRange.startDate, customDateRange.endDate)
+                        : 'Custom Range'
+                      }
+                    </button>
                     
-                    {customDateRange.start && customDateRange.end && (
-                      <div className="flex items-center justify-between bg-white/5 rounded-lg p-3 border border-white/10">
-                        <div className="text-sm text-white/70">
-                          Selected: {formatDateRange(customDateRange.start, customDateRange.end)}
-                          {isSingleDay(customDateRange.start, customDateRange.end) && (
-                            <span className="ml-2 px-2 py-1 bg-cyan-500/20 text-cyan-300 rounded-md text-xs">
-                              Hourly View
-                            </span>
+                    {/* Custom Date Picker Popover */}
+                    {showCustomDatePicker && (
+                      <div 
+                        ref={datePickerRef}
+                        className="absolute top-full bg-[#8068a9] left-0 mt-2 z-50 backdrop-blur rounded-xl border border-white/20 p-4 shadow-2xl min-w-[320px]"
+                      >
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-white/80 mb-2">
+                              Select Date Range
+                            </label>
+                            <Datepicker
+                              value={{ 
+                                startDate: customDateRange.startDate, 
+                                endDate: customDateRange.endDate 
+                              }}
+                              onChange={handleCustomDateChange}
+                              showShortcuts={true}
+                              maxDate={new Date()}
+                              minDate={new Date(Date.now() - 3 * 30 * 24 * 60 * 60 * 1000)}
+                              primaryColor="cyan"
+                              inputClassName="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                              containerClassName="relative z-50"
+                              popoverDirection="down"
+                              displayFormat="MMM DD, YYYY"
+                              separator=" to "
+                              startFrom={new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)}
+                              useRange={true}
+                            />
+                          </div>
+                          
+                          {customDateRange.startDate && customDateRange.endDate && customDateRange.isCustom && (
+                            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+                              <div className="text-sm text-white/70">
+                                <span className="font-medium text-white">Active Range:</span> {formatDateRange(customDateRange.startDate, customDateRange.endDate)}
+                                {isSingleDay(customDateRange.startDate, customDateRange.endDate) && (
+                                  <span className="ml-2 px-2 py-1 bg-cyan-500/20 text-cyan-300 rounded-md text-xs">
+                                    Hourly View
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {dateRangeError && (
+                            <div className="flex items-center gap-2 text-red-300 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                              <AlertCircle size={16} />
+                              <span>{dateRangeError}</span>
+                            </div>
                           )}
                         </div>
-                        <button
-                          onClick={handleApplyCustomRange}
-                          className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg text-sm font-medium transition-all duration-200 shadow-lg shadow-emerald-500/20"
-                        >
-                          Apply
-                        </button>
-                      </div>
-                    )}
-                    
-                    {dateRangeError && (
-                      <div className="flex items-center gap-2 text-red-300 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                        <AlertCircle size={16} />
-                        <span>{dateRangeError}</span>
                       </div>
                     )}
                   </div>
-                )}
+                </div>
               </div>
               
               {analyticsLoading && (
@@ -769,7 +812,7 @@ const Release: React.FC = () => {
                           <TrendingUp size={16} className="mr-2" />
                           Adoption Over Time
                         </h5>
-                        <AdoptionChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
+                        <AdoptionChart data={adoptionData} interval={getChartInterval()} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -777,7 +820,7 @@ const Release: React.FC = () => {
                           <BarChart3 size={16} className="mr-2" />
                           Performance Metrics
                         </h5>
-                        <PerformanceChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
+                        <PerformanceChart data={adoptionData} interval={getChartInterval()} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -785,7 +828,7 @@ const Release: React.FC = () => {
                           <Clock size={16} className="mr-2" />
                           Time to Adoption
                         </h5>
-                        <TimeToAdoptionChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
+                        <TimeToAdoptionChart data={adoptionData} interval={getChartInterval()} />
                       </div>
                       
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -793,7 +836,7 @@ const Release: React.FC = () => {
                           <RotateCcw size={16} className="mr-2" />
                           Rollback Analysis
                         </h5>
-                        <RollbackChart data={adoptionData} interval={dateRange === '1d' ? 'HOUR' : 'DAY'} />
+                        <RollbackChart data={adoptionData} interval={getChartInterval()} />
                       </div>
                     </div>
                   )}
