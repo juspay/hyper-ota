@@ -3,7 +3,15 @@ import { useParams } from "react-router-dom";
 import ReactJson from "@uiw/react-json-view";
 import axios from "../api/axios";
 import ReleaseHistory from "./release/ReleaseHistory";
-import { Package, Settings, Calendar, Eye, EyeOff, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { MetricGrid } from "./analytics/MetricCards";
+import { 
+  AdoptionChart,
+  PerformanceChart,
+  TimeToAdoptionChart,
+  RollbackChart
+} from "./analytics/Charts";
+import { analyticsService } from "../services/analyticsService";
+import { Package, Settings, Calendar, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, BarChart3, Download, CheckCircle, RotateCcw, Clock, TrendingUp, Smartphone } from "lucide-react";
 import { vscodeTheme } from '@uiw/react-json-view/vscode';
 
 
@@ -38,6 +46,32 @@ interface ReleaseConfig {
   };
 }
 
+interface AdoptionData {
+  time_slot: string;
+  download_success: number;
+  download_failures: number;
+  apply_success: number;
+  apply_failures: number;
+  rollbacks_initiated: number;
+  rollbacks_completed: number;
+  rollback_failures: number;
+  update_checks: number;
+  update_available: number;
+}
+
+interface PerformanceData {
+  total_devices: number;
+  check_for_update_rate: number;
+  update_available_rate: number;
+  download_success_rate: number;
+  download_failure_rate: number;
+  apply_success_rate: number;
+  apply_failure_rate: number;
+  rollback_rate: number;
+  average_download_time: number;
+  average_apply_time: number;
+}
+
 const Release: React.FC = () => {
   const { org, app } = useParams<{ org: string; app: string }>();
   const [loading, setLoading] = useState(true);
@@ -45,6 +79,13 @@ const Release: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  
+  // Analytics state
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [adoptionData, setAdoptionData] = useState<AdoptionData[]>([]);
+  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
   const fetchReleaseData = useCallback(async (version?: number) => {
     try {
@@ -63,9 +104,83 @@ const Release: React.FC = () => {
     }
   }, [org, app]);
 
+  const fetchAnalyticsData = useCallback(async () => {
+    if (!releaseData?.package?.version || !org || !app) return;
+    
+    try {
+      setAnalyticsLoading(true);
+      setAnalyticsError(null);
+
+      // Prepare filters for analytics service
+      const filters = {
+        tenant_id: "default", // You may want to get this from context or props
+        org_id: org,
+        app_id: app,
+        release_id: releaseData.package.version,
+        date_range: '7d' as const,
+        interval: 'DAY' as const
+      };
+
+      // Check if analytics service is available
+      try {
+        await analyticsService.checkHealth();
+      } catch (healthError) {
+        throw new Error("Analytics service is unavailable. Please check if the analytics microservice is running.");
+      }
+
+      // Fetch adoption metrics using analytics service
+      const adoptionMetrics = await analyticsService.getAdoptionMetrics(filters);
+      setAdoptionData(adoptionMetrics.time_breakdown || []);
+
+      // Fetch performance metrics using analytics service
+      const performanceMetrics = await analyticsService.getPerformanceMetrics(filters);
+      
+      // Fetch active devices metrics to get total device count
+      const activeDevicesMetrics = await analyticsService.getActiveDevicesMetrics(filters);
+
+      // Calculate rates from adoption data (with fallback for empty data)
+      const adoptionData = adoptionMetrics.time_breakdown || [];
+      const totalUpdateChecks = adoptionData.reduce((sum, item) => sum + item.update_checks, 0);
+      const totalUpdateAvailable = adoptionData.reduce((sum, item) => sum + item.update_available, 0);
+      const totalDownloadSuccess = adoptionData.reduce((sum, item) => sum + item.download_success, 0);
+      const totalDownloadFailures = adoptionData.reduce((sum, item) => sum + item.download_failures, 0);
+      const totalApplySuccess = adoptionData.reduce((sum, item) => sum + item.apply_success, 0);
+      const totalApplyFailures = adoptionData.reduce((sum, item) => sum + item.apply_failures, 0);
+      const totalRollbacks = adoptionData.reduce((sum, item) => sum + item.rollbacks_initiated, 0);
+
+      // Transform performance metrics to match our PerformanceData interface
+      const transformedPerformanceData = {
+        total_devices: activeDevicesMetrics.total_active_devices || 0,
+        check_for_update_rate: totalUpdateChecks > 0 ? totalUpdateAvailable / totalUpdateChecks : 0,
+        update_available_rate: totalUpdateChecks > 0 ? totalUpdateAvailable / totalUpdateChecks : 0,
+        download_success_rate: (totalDownloadSuccess + totalDownloadFailures) > 0 ? totalDownloadSuccess / (totalDownloadSuccess + totalDownloadFailures) : 0,
+        download_failure_rate: (totalDownloadSuccess + totalDownloadFailures) > 0 ? totalDownloadFailures / (totalDownloadSuccess + totalDownloadFailures) : 0,
+        apply_success_rate: (totalApplySuccess + totalApplyFailures) > 0 ? totalApplySuccess / (totalApplySuccess + totalApplyFailures) : 0,
+        apply_failure_rate: (totalApplySuccess + totalApplyFailures) > 0 ? totalApplyFailures / (totalApplySuccess + totalApplyFailures) : 0,
+        rollback_rate: activeDevicesMetrics.total_active_devices > 0 ? totalRollbacks / activeDevicesMetrics.total_active_devices : 0,
+        average_download_time: performanceMetrics.avg_download_time_ms || 0,
+        average_apply_time: performanceMetrics.avg_apply_time_ms || 0
+      };
+
+      setPerformanceData(transformedPerformanceData);
+
+    } catch (error: any) {
+      console.error("Analytics fetch error:", error);
+      setAnalyticsError(error.message || "Failed to fetch analytics data");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [org, app, releaseData?.package?.version]);
+
   useEffect(() => {
     fetchReleaseData(selectedVersion || undefined);
   }, [fetchReleaseData, selectedVersion]);
+
+  useEffect(() => {
+    if (releaseData && showAnalytics) {
+      fetchAnalyticsData();
+    }
+  }, [fetchAnalyticsData, releaseData, showAnalytics]);
 
   const handleSelectRelease = (version: number) => {
     setSelectedVersion(version);
@@ -130,18 +245,32 @@ const Release: React.FC = () => {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className={`inline-flex items-center px-4 sm:px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg ${
-                showHistory 
-                  ? "bg-white/10 hover:bg-white/20 text-white border border-white/20" 
-                  : "bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-purple-500/20"
-              }`}
-            >
-              {showHistory ? <EyeOff size={18} className="mr-2" /> : <Eye size={18} className="mr-2" />}
-              <span className="hidden sm:inline">{showHistory ? "Hide History" : "Show Release History"}</span>
-              <span className="sm:hidden">{showHistory ? "Hide" : "History"}</span>
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className={`inline-flex items-center px-4 sm:px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                  showAnalytics 
+                    ? "bg-white/10 hover:bg-white/20 text-white border border-white/20" 
+                    : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-emerald-500/20"
+                }`}
+              >
+                <BarChart3 size={18} className="mr-2" />
+                <span className="hidden sm:inline">{showAnalytics ? "Hide Analytics" : "Show Analytics"}</span>
+                <span className="sm:hidden">{showAnalytics ? "Hide" : "Analytics"}</span>
+              </button>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`inline-flex items-center px-4 sm:px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                  showHistory 
+                    ? "bg-white/10 hover:bg-white/20 text-white border border-white/20" 
+                    : "bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-purple-500/20"
+                }`}
+              >
+                {showHistory ? <EyeOff size={18} className="mr-2" /> : <Eye size={18} className="mr-2" />}
+                <span className="hidden sm:inline">{showHistory ? "Hide History" : "Show Release History"}</span>
+                <span className="sm:hidden">{showHistory ? "Hide" : "History"}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -160,6 +289,135 @@ const Release: React.FC = () => {
                   onSelectRelease={handleSelectRelease}
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Section */}
+        {showAnalytics && (
+          <div className="mb-6 sm:mb-8">
+            <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 p-4 sm:p-6 shadow-xl">
+              <h3 className="text-lg sm:text-xl font-semibold text-white mb-4 sm:mb-6 flex items-center">
+                <BarChart3 size={20} className="mr-2" />
+                Release Analytics
+                <span className="ml-2 text-sm font-normal text-white/60">
+                  Version {releaseData?.package?.version}
+                </span>
+              </h3>
+              
+              {analyticsLoading && (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4">
+                    <Loader2 size={24} className="text-white animate-spin" />
+                  </div>
+                  <p className="text-white/60">Loading analytics data...</p>
+                </div>
+              )}
+
+              {analyticsError && (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 bg-red-500/20 rounded-2xl mb-4">
+                    <AlertCircle size={24} className="text-red-400" />
+                  </div>
+                  <p className="text-red-400 mb-4">{analyticsError}</p>
+                  <button
+                    onClick={fetchAnalyticsData}
+                    className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300"
+                  >
+                    <RefreshCw size={16} className="mr-2" />
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {!analyticsLoading && !analyticsError && performanceData && (
+                <div className="space-y-6">
+                  {/* Performance Metrics */}
+                  <div>
+                    <h4 className="text-base font-semibold text-white mb-4 flex items-center">
+                      <Smartphone size={16} className="mr-2" />
+                      Performance Overview
+                    </h4>
+                    <MetricGrid
+                      metrics={[
+                        {
+                          title: "Total Devices",
+                          value: performanceData.total_devices.toLocaleString(),
+                          change: null,
+                          icon: Smartphone
+                        },
+                        {
+                          title: "Check for Update Rate",
+                          value: `${(performanceData.check_for_update_rate * 100).toFixed(1)}%`,
+                          change: null,
+                          icon: RefreshCw
+                        },
+                        {
+                          title: "Download Success Rate",
+                          value: `${(performanceData.download_success_rate * 100).toFixed(1)}%`,
+                          change: null,
+                          icon: Download
+                        },
+                        {
+                          title: "Apply Success Rate",
+                          value: `${(performanceData.apply_success_rate * 100).toFixed(1)}%`,
+                          change: null,
+                          icon: CheckCircle
+                        },
+                        {
+                          title: "Rollback Rate",
+                          value: `${(performanceData.rollback_rate * 100).toFixed(1)}%`,
+                          change: null,
+                          icon: RotateCcw
+                        },
+                        {
+                          title: "Avg Download Time",
+                          value: `${(performanceData.average_download_time / 1000).toFixed(1)}s`,
+                          change: null,
+                          icon: Clock
+                        }
+                      ]}
+                    />
+                  </div>
+
+                  {/* Charts */}
+                  {adoptionData.length > 0 && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <h5 className="text-sm font-semibold text-white mb-4 flex items-center">
+                          <TrendingUp size={16} className="mr-2" />
+                          Adoption Over Time
+                        </h5>
+                        <AdoptionChart data={adoptionData} interval="DAY" />
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <h5 className="text-sm font-semibold text-white mb-4 flex items-center">
+                          <BarChart3 size={16} className="mr-2" />
+                          Performance Metrics
+                        </h5>
+                        <PerformanceChart data={adoptionData} />
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <h5 className="text-sm font-semibold text-white mb-4 flex items-center">
+                          <Clock size={16} className="mr-2" />
+                          Time to Adoption
+                        </h5>
+                        <TimeToAdoptionChart data={adoptionData} />
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <h5 className="text-sm font-semibold text-white mb-4 flex items-center">
+                          <RotateCcw size={16} className="mr-2" />
+                          Rollback Analysis
+                        </h5>
+                        <RollbackChart data={adoptionData} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

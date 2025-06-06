@@ -815,8 +815,62 @@ impl Client {
         })
     }
 
-    /// Get active devices metrics
     pub async fn get_active_devices_metrics(
+    &self,
+    tenant_id: &str,
+    org_id: &str,
+    app_id: &str,
+    days: u32,
+) -> Result<ActiveDevicesMetrics> {
+    let sql = format!(
+        r#"
+        SELECT
+            eventDate AS event_date,
+            uniq(deviceId) AS active_devices
+        FROM ota_events_raw
+        WHERE tenantId = '{}'
+          AND orgId    = '{}'
+          AND appId    = '{}'
+          AND eventDate >= subtractDays(today(), {})
+        GROUP BY eventDate
+        ORDER BY eventDate
+        "#,
+        tenant_id, org_id, app_id, days
+    );
+
+    // Fetch (Date, UInt64) directly—Date maps to chrono::NaiveDate
+     #[derive(Row, Serialize, Deserialize, Debug)]
+    struct ActiveDevicesRow {
+        #[serde(with = "clickhouse::serde::time::date")]
+        event_date: time::Date,
+        active_devices: u64,
+    }
+
+    let mut cursor = self.client.query(&sql).fetch::<ActiveDevicesRow>()?;
+    let mut daily_breakdown = Vec::new();
+    let mut total_active_devices = 0u64;
+
+    while let Some(row) = cursor.next().await? {
+        if row.active_devices > total_active_devices {
+            total_active_devices = row.active_devices;
+        }
+
+        let date = chrono::NaiveDate::from_ymd_opt(row.event_date.year() as i32, row.event_date.month() as u32, row.event_date.day() as u32)
+            .expect("Invalid date conversion from time::Date to chrono::NaiveDate");
+        daily_breakdown.push(DailyActiveDevices { date, active_devices: row.active_devices });
+    }
+
+    Ok(ActiveDevicesMetrics {
+        tenant_id: tenant_id.to_string(),
+        org_id: org_id.to_string(),
+        app_id: app_id.to_string(),
+        daily_breakdown,
+        total_active_devices,
+    })
+}
+
+    /// Get active devices metrics
+    pub async fn get_active_devices_metrics1(
         &self,
         tenant_id: &str,
         org_id: &str,
@@ -826,15 +880,15 @@ impl Client {
         let sql = format!(
             r#"
             SELECT 
-                toDate(timestamp) as event_date,
+                eventDate as event_date,
                 uniq(deviceId) as active_devices
             FROM ota_events_raw 
             WHERE tenantId = '{}' 
               AND orgId = '{}' 
               AND appId = '{}' 
-              AND timestamp >= subtractDays(now(), {})
-            GROUP BY event_date
-            ORDER BY event_date
+              AND eventDate >= subtractDays(today(), {})
+            GROUP BY eventDate
+            ORDER BY eventDate
             "#,
             tenant_id, org_id, app_id, days
         );

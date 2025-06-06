@@ -41,7 +41,7 @@ services:
         hard: 262144
     ports:
       - "8123:8123"   # HTTP interface
-      - "9000:9000"   # Native TCP interface
+      - "9544:9000"   # Native TCP interface
       - "9009:9009"   # Interserver HTTP (for clustering/replication)
     environment:
       CLICKHOUSE_DB: analytics
@@ -57,7 +57,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8080:6666"
+      - "8999:6666"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
