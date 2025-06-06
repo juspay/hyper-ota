@@ -1,3 +1,17 @@
+// Copyright 2025 Juspay Technologies
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 buildscript {
   ext.getExtOrDefault = {name ->
     return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['Hyperota_' + name]
@@ -33,7 +47,7 @@ android {
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
-    
+
     buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", project.hasProperty("newArchEnabled") && project.newArchEnabled == "true" ? "true" : "false"
   }
 
@@ -78,7 +92,7 @@ def kotlin_version = getExtOrDefault("kotlinVersion")
 dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-  
+
   // HyperOTA SDK dependency
   implementation "in.juspay:hyperota:0.0.1-xota.03"
 }

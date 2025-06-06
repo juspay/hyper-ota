@@ -92,7 +92,7 @@ Please ensure your code adheres to existing coding styles and includes appropria
 
 ## 📄 License
 
-This project is licensed under the MIT License. (You can replace this with your preferred license and add a `LICENSE.md` file).
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
 
 ---
 
