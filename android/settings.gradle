@@ -16,3 +16,4 @@
 
 include ':hyper-ota'
 include ':hyper-ota-react'
+include ':airborne'
