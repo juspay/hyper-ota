@@ -23,6 +23,7 @@ import { Login } from "./components/Login";
 import Home from "./components/Home";
 import { Signup } from "./components/Signup";
 import Release from "./components/Release";
+import Analytics from "./components/Analytics";
 import axios from "./api/axios";
 import Toast from "./components/Toast";
 
@@ -175,6 +176,32 @@ const App: React.FC = () => {
           }
         />
         <Route path="/dashboard/release/:org/:app" element={<Release />} />
+        <Route 
+          path="/dashboard/analytics/:org/:app" 
+          element={
+            isAuthenticated && user ? (
+              <Analytics 
+                user={user}
+                setIsAuthenticated={setIsAuthenticated}
+              />
+            ) : (
+              <Navigate to="/dashboard/login" replace />
+            )
+          } 
+        />
+        <Route 
+          path="/dashboard/analytics/:org/:app/:release" 
+          element={
+            isAuthenticated && user ? (
+              <Analytics 
+                user={user}
+                setIsAuthenticated={setIsAuthenticated}
+              />
+            ) : (
+              <Navigate to="/dashboard/login" replace />
+            )
+          } 
+        />
         <Route
           path="/"
           element={
