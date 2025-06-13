@@ -1,10 +1,12 @@
 import { Application, Organisation } from "../../types";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+// import { useNavigate } from "react-router-dom";
 import ReleaseWorkflow from "../release/ReleaseWorkflow";
 import UserManagement from "./UserManagement";
-import { AppWindow, Plus, ArrowLeft, Activity, Clock, Globe, Package, ChevronDown, ChevronUp, Rocket, Eye } from "lucide-react";
+import { AppWindow, Plus, ArrowLeft, Activity, Clock, Globe, Package, ChevronDown, ChevronUp, Rocket, FileJson, ListRestart } from "lucide-react";
 import axios from "../../api/axios";
+import CreateDimension from '../dimension/CreateDimension';
+import DimensionPriority from '../dimension/DimensionPriority';
 
 interface ReleaseInfo {
   config: {
@@ -56,11 +58,13 @@ export default function ApplicationDetails({
   onAppSelect,
   onCreateApp,
 }: ApplicationDetailsProps) {
+  console.log(onTabChange)
   const [isReleaseModalOpen, setIsReleaseModalOpen] = useState(false);
+  const [isDimensionModalOpen, setIsDimensionModalOpen] = useState(false);
   const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo | null>(null);
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [showConfigDetails, setShowConfigDetails] = useState(false);
-  const navigate = useNavigate();
+  const [isDimensionPriorityOpen, setIsDimensionPriorityOpen] = useState(false);
 
   useEffect(() => {
     setIsReleaseModalOpen(false);
@@ -335,68 +339,38 @@ export default function ApplicationDetails({
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-4">
         <button
-          onClick={() =>
-            navigate(
-              `/dashboard/release/${organization.name}/${application.application}`
-            )
-          }
-          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all duration-300 border border-white/20 flex items-center"
-        >
-          <Eye size={18} className="mr-2" />
-          View Release Details
-        </button>
-        <button
           onClick={handleRelease}
           className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-500/20 flex items-center"
         >
           <Rocket size={18} className="mr-2" />
           Create Release
         </button>
+
+        <button
+          onClick={() => setIsDimensionModalOpen(true)}
+          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-500/20 flex items-center"
+        >
+          <FileJson size={18} className="mr-2" />
+          Create Dimension
+        </button>
+
+        <button
+          onClick={() => setIsDimensionPriorityOpen(true)}
+          className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg shadow-orange-500/20 flex items-center"
+        >
+          <ListRestart size={18} className="mr-2" />
+          Manage Dimensions
+        </button>
       </div>
     </div>
   );
 
+  const handleDimensionSuccess = () => {
+    // Add any refresh logic here if needed after dimension creation
+  };
+
   return (
     <div className="flex flex-col h-full">
-      {/* Organization Header */}
-      <div className="mb-8">
-        <div className="flex items-center">
-          <div className="w-10 h-10 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center mr-3">
-            <Package size={20} className="text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-white">{organization.name}</h2>
-            <p className="text-white/60">Organization Management</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex mb-8">
-        <div className="bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 p-1 flex">
-          <button
-            className={`px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-300 ${
-              activeTab === "applications"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-blue-500/20"
-                : "text-white/70 hover:text-white hover:bg-white/10"
-            }`}
-            onClick={() => onTabChange("applications")}
-          >
-            Applications
-          </button>
-          <button
-            className={`px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-300 ${
-              activeTab === "users"
-                ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-blue-500/20"
-                : "text-white/70 hover:text-white hover:bg-white/10"
-            }`}
-            onClick={() => onTabChange("users")}
-          >
-            Users
-          </button>
-        </div>
-      </div>
-
       {/* Content */}
       <div className="flex-1">
         {activeTab === "applications" ? (
@@ -409,6 +383,19 @@ export default function ApplicationDetails({
                 await fetchReleaseInfo();
                 handleCloseRelease();
               }}
+            />
+          ) : isDimensionModalOpen && application ? (
+            <CreateDimension
+              application={application.application}
+              organization={organization.name}
+              onClose={() => setIsDimensionModalOpen(false)}
+              onSuccess={handleDimensionSuccess}
+            />
+          ) : isDimensionPriorityOpen && application ? (
+            <DimensionPriority
+              application={application.application}
+              organization={organization.name}
+              onClose={() => setIsDimensionPriorityOpen(false)}
             />
           ) : application ? (
             renderApplicationDetails()

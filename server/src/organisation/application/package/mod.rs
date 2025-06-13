@@ -564,9 +564,23 @@ struct PackageJsonV1MultipartRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct PackageJsonV1Request {
-    package: PackageV1,
-    resources: Vec<crate::utils::db::models::File>,
+pub enum ContextOperator {
+    #[serde(rename = "IS")]
+    Is,
+}
+
+impl Default for ContextOperator {
+    fn default() -> Self {
+        Self::Is
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct PackageContext {
+    key: String,
+    value: String,
+    #[serde(default)]
+    operator: ContextOperator
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -578,6 +592,14 @@ struct PackageV1 {
     index: String,
     important: Vec<crate::utils::db::models::File>,
     lazy: Vec<crate::utils::db::models::File>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct PackageJsonV1Request {
+    package: PackageV1,
+    resources: Vec<crate::utils::db::models::File>,
+    #[serde(default)]
+    contexts: Vec<PackageContext>
 }
 
 #[post("/create_package_json_v1")]
@@ -718,13 +740,10 @@ async fn create_json_v1_multipart(
 
         let s3_client = &state.s3_client;
 
-        // Upload file to S3
         let s3_path = format!(
             "assets/{}/{}/{}/{}",
             organisation, application, ver, index_name
         );
-
-        println!("Checking if bucket exists: {}", state.env.bucket_name);
 
         match push_file(
             s3_client,
@@ -735,16 +754,10 @@ async fn create_json_v1_multipart(
         .await
         {
             Ok(_) => {
-                println!("S3 upload response details:");
-                println!("Bucket: {}", state.env.bucket_name);
-                println!("Full S3 path: {}", s3_path);
-                println!("S3 client config: {:?}", s3_client.config());
-
-                // Update the index URL
                 req.package.index = format!(
-                    "{}/{}/{}",
-                    state.env.public_url, state.env.bucket_name, s3_path
-                );
+                        "{}/{}/{}",
+                        state.env.public_url, state.env.bucket_name, s3_path
+                    );        
             }
             Err(e) => {
                 println!("S3 upload error details:");
@@ -779,10 +792,25 @@ async fn create_json_v1_multipart(
         .get("manifest_hash")
         .ok_or_else(|| error::ErrorBadRequest("Missing manifest_hash in package properties"))?;
 
+    // Create context string from context operators
+    let context_string = if !req.contexts.is_empty() {
+        req.contexts.iter().map(|ctx| {
+            let operator_str = match ctx.operator {
+                ContextOperator::Is => "IS",
+            };
+            format!("{}:{}:{}", ctx.key, operator_str, ctx.value)
+        }).collect::<Vec<_>>().join(",")
+    } else {
+        String::new()
+    };
+
     // Create control variant with package configuration
     let mut control_overrides = std::collections::HashMap::new();
     control_overrides.insert("package.version".to_string(), json!(ver));
     control_overrides.insert("package.name".to_string(), json!(req.package.name));
+    if !context_string.is_empty() {
+        control_overrides.insert("context".to_string(), json!(context_string));
+    }
 
     // Create experimental variant
     let experimental_overrides = control_overrides.clone();

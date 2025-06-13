@@ -37,23 +37,23 @@ export default defineConfig(({ command }) => {
         proxy: {
           '/organisations': {
             target: 'http://backend:9000',
-            changeOrigin: true,
+            changeOrigin: false,
           },
           '/organisation': {
             target: 'http://backend:9000',
-            changeOrigin: true,
+            changeOrigin: false,
           },
           '/user': {
             target: 'http://backend:9000',
-            changeOrigin: true,
+            changeOrigin: false,
           },
           '/users': {
             target: 'http://backend:9000',
-            changeOrigin: true,
+            changeOrigin: false,
           },
           '/release': {
             target: 'http://backend:9000',
-            changeOrigin: true,
+            changeOrigin: false,
           },
         },
       }

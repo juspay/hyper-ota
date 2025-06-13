@@ -1,7 +1,18 @@
-import { useState } from "react";
-import { Save, X, Package, Settings } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Save, X, Package, Settings, Plus, Check, ChevronDown } from "lucide-react";
 import { Application, Organisation } from "../../types";
 import axios from "../../api/axios";
+
+interface Dimension {
+  dimension: string;
+  position: number;
+  description: string;
+}
+
+interface DimensionContext {
+  dimension: string;
+  value: string;
+}
 
 interface CreateReleaseProps {
   application: Application;
@@ -29,6 +40,110 @@ export default function CreateRelease({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [useLatestVersion, setUseLatestVersion] = useState(false);
+  const [dimensions, setDimensions] = useState<Dimension[]>([]);
+  const [dimensionContexts, setDimensionContexts] = useState<DimensionContext[]>([]);
+  const [isAddingContext, setIsAddingContext] = useState(false);
+  const [selectedDimension, setSelectedDimension] = useState("");
+  const [selectedValue, setSelectedValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchDimensions = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await axios.get(
+        `/organisations/applications/dimension/list`,
+        {
+          headers: {
+            'x-organisation': organization.name,
+            'x-application': application.application
+          }
+        }
+      );
+      
+      const sortedDimensions = response.data.data?.sort(
+        (a: Dimension, b: Dimension) => a.position - b.position
+      ) || [];
+
+      setDimensions(sortedDimensions);
+    } catch (err) {
+      console.error('Error fetching dimensions:', err);
+      setError('Failed to load dimensions');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [application, organization.name]);
+
+  useEffect(() => {
+    fetchDimensions();
+  }, [fetchDimensions]);
+
+  const handleAddContext = () => {
+    setIsAddingContext(true);
+  };
+
+  const handleSaveContext = () => {
+    if (selectedDimension && selectedValue) {
+      setDimensionContexts([
+        ...dimensionContexts,
+        {
+          dimension: selectedDimension,
+          value: selectedValue
+        }
+      ]);
+      // Reset form
+      setSelectedDimension("");
+      setSelectedValue("");
+      setIsAddingContext(false);
+    }
+  };
+
+  const handleRemoveContext = (index: number) => {
+    setDimensionContexts(dimensionContexts.filter((_, i) => i !== index));
+  };
+
+  const handleCreateRelease = async () => {
+    try {
+      setIsSubmitting(true);
+      setError("");
+
+      const headers = {
+        "x-organisation": organization.name,
+        "x-application": application.application,
+      };
+
+      // Transform dimension contexts into JsonLogic format
+      const contextLogic = dimensionContexts.length > 0
+        ? {
+            "and": dimensionContexts.map(ctx => ({
+              "==": [
+                { "var": ctx.dimension },
+                ctx.value
+              ]
+            }))
+          }
+        : true; // if no contexts, the rule should always match
+
+      // Prepare release data
+      const releaseData = {
+        context: contextLogic,
+        version_id: versionInfo?.packageVersion ? versionInfo.packageVersion.toString() : undefined,
+      };
+
+      // Create release
+      const response = await axios.post(
+        `/organisations/applications/release/create`,
+        releaseData,
+        { headers }
+      );
+
+      onSuccess?.(response.data);
+    } catch (err: any) {
+      console.error('Error creating release:', err);
+      setError(err.response?.data?.message || 'Failed to create release');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleMetadataChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -54,47 +169,6 @@ export default function CreateRelease({
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     setUseLatestVersion(e.target.checked);
-  };
-
-  const handleCreateRelease = async () => {
-    try {
-      setIsSubmitting(true);
-      setError("");
-
-      const headers = {
-        "x-organisation": organization.name,
-        "x-application": application.application,
-      };
-
-      // Prepare release data
-      const releaseData: any = {};
-
-      // Add metadata if provided
-      if (metadata) {
-        releaseData.metadata = JSON.parse(metadata);
-      }
-
-      // Add version_id if not using latest version
-      if (!useLatestVersion) {
-        releaseData.version_id = versionInfo.packageVersion.toString();
-      }
-
-      const response = await axios.post(
-        "/organisations/applications/release/create",
-        releaseData,
-        { headers }
-      );
-
-      onSuccess(response.data);
-    } catch (err: any) {
-      console.error(err);
-      setError(
-        err.response?.data?.message ||
-          "Failed to create release. Please try again."
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   return (
@@ -179,6 +253,126 @@ export default function CreateRelease({
                   </p>
                 </div>
               </label>
+            </div>
+
+            {/* Dimension Context Section */}
+            <div className="mb-8 p-6 bg-white/5 rounded-xl border border-white/10">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Context</h3>
+                  <p className="text-white/60 text-sm mt-1">Define dimension contexts for this release</p>
+                </div>
+                {!isAddingContext && !isLoading && (
+                  <button
+                    onClick={handleAddContext}
+                    className="px-4 py-2 bg-purple-500/20 text-purple-200 rounded-lg font-medium border border-purple-400/30 hover:bg-purple-500/30 transition-all duration-200 flex items-center"
+                  >
+                    <Plus size={18} className="mr-2" />
+                    Add Context
+                  </button>
+                )}
+              </div>
+
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mx-auto"></div>
+                  <p className="text-white/60 mt-4">Loading dimensions...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Context List */}
+                  {dimensionContexts.length > 0 && (
+                    <div className="space-y-3 mb-6">
+                      {dimensionContexts.map((context, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-white/80">{context.dimension}</span>
+                            <span className="text-white/40">IS</span>
+                            <span className="text-white/80">{context.value}</span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveContext(index)}
+                            className="text-red-400 hover:text-red-300 p-1 hover:bg-red-400/10 rounded transition-all duration-200"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Context Form */}
+                  {isAddingContext && (
+                    <div className="bg-white/5 p-4 rounded-lg border border-white/10">
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* Dimension Select */}
+                        <div>
+                          <label className="block text-sm font-medium text-white/80 mb-2">
+                            Dimension
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={selectedDimension}
+                              onChange={(e) => setSelectedDimension(e.target.value)}
+                              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white appearance-none cursor-pointer"
+                            >
+                              <option value="">Select Dimension</option>
+                              {dimensions.map((dim) => (
+                                <option key={dim.dimension} value={dim.dimension}>
+                                  {dim.dimension}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown 
+                              size={16} 
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/40" 
+                            />
+                          </div>
+                        </div>
+
+                        {/* Value Input */}
+                        <div>
+                          <label className="block text-sm font-medium text-white/80 mb-2">
+                            Value
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedValue}
+                            onChange={(e) => setSelectedValue(e.target.value)}
+                            placeholder="Enter value"
+                            className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Form Actions */}
+                      <div className="mt-4 flex justify-end space-x-3">
+                        <button
+                          onClick={() => setIsAddingContext(false)}
+                          className="px-4 py-2 text-white/60 hover:text-white/80 transition-colors duration-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveContext}
+                          disabled={!selectedDimension || !selectedValue}
+                          className={`px-4 py-2 rounded-lg flex items-center ${
+                            selectedDimension && selectedValue
+                              ? "bg-purple-500/20 text-purple-200 border border-purple-400/30 hover:bg-purple-500/30"
+                              : "bg-white/5 text-white/40 border border-white/10 cursor-not-allowed"
+                          }`}
+                        >
+                          <Check size={18} className="mr-2" />
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Release Metadata */}

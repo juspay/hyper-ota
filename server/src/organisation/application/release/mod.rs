@@ -21,13 +21,20 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use superposition_rust_sdk::{
+    apis::default_api::{create_experiment, ramp_experiment}, // Added ramp_experiment
+    models,
+};
 
 use crate::{
     middleware::auth::{validate_user, AuthResponse, READ, WRITE},
     types::AppState,
-    utils::db::{
-        models::{PackageEntryRead, ReleaseEntry},
-        schema::hyperotaserver::releases::dsl::*,
+    utils::{
+        db::{
+            models::{PackageEntryRead, ReleaseEntry},
+            schema::hyperotaserver::releases::dsl::*,
+        },
+        workspace::get_workspace_name_for_application,
     },
 };
 
@@ -35,10 +42,11 @@ pub fn add_routes() -> Scope {
     Scope::new("").service(create).service(list_releases)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct CreateRequest {
     version_id: Option<String>,
     metadata: Option<serde_json::Value>,
+    context: Option<serde_json::Value>, // Changed to accept JsonLogic format directly
 }
 
 #[derive(Serialize)]
@@ -103,7 +111,8 @@ async fn create(
             .ok_or_else(|| error::ErrorNotFound("No packages found for this application"))?
     };
 
-    let package = crate::utils::db::schema::hyperotaserver::packages::dsl::packages
+    // Verify package exists
+    crate::utils::db::schema::hyperotaserver::packages::dsl::packages
         .filter(
             crate::utils::db::schema::hyperotaserver::packages::dsl::org_id
                 .eq(&organisation)
@@ -143,6 +152,120 @@ async fn create(
     let now = Utc::now();
     let user_id = auth_response.sub.clone();
 
+    // Use superposition_org_id from environment
+    let superposition_org_id_from_env = state.env.superposition_org_id.clone();
+    println!("Using Superposition Org ID from environment for create release: {}", superposition_org_id_from_env);
+
+    // Get workspace name for this application
+    let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await
+        .map_err(|e| error::ErrorInternalServerError(format!("Failed to get workspace name: {}", e)))?;
+    println!("Using workspace name for create release: {}", workspace_name);
+
+    // Create context and variants for the experiment
+    let mut context_map: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    if let Some(context) = &req.context {
+        context_map = serde_json::from_value(context.clone()).map_err(error::ErrorInternalServerError)?;
+    }
+
+    // Create control variant with release configuration
+    let mut control_overrides = std::collections::HashMap::new();
+    control_overrides.insert("package.version".to_string(), serde_json::json!(pkg_version));
+    // control_overrides.insert("package.name".to_string(), serde_json::json!(application.clone()));
+    // control_overrides.insert("release.id".to_string(), serde_json::json!(release_id.to_string()));
+    // control_overrides.insert("release.config_version".to_string(), serde_json::json!(config.config_version.clone()));
+
+    // Create experimental variant with same overrides
+    let experimental_overrides = control_overrides.clone();
+
+    // Create variants
+    let control_variant = models::Variant {
+        id: "control".to_string(),
+        variant_type: models::VariantType::Control,
+        context_id: None,
+        override_id: None,
+        overrides: Some(serde_json::Value::Object(serde_json::Map::from_iter(
+            control_overrides,
+        ))),
+    };
+
+    let experimental_variant = models::Variant {
+        id: "experimental".to_string(),
+        variant_type: models::VariantType::Experimental,
+        context_id: None,
+        override_id: None,
+        overrides: Some(serde_json::Value::Object(serde_json::Map::from_iter(
+            experimental_overrides,
+        ))),
+    };
+
+    // Create experiment in Superposition
+    let experiment_content = models::CreateExperimentRequestContent::new(
+        format!("{}_release_{}", application, release_id),
+        context_map,
+        vec![control_variant, experimental_variant],
+        format!(
+            "Creating release for application '{}' with version {} and ID {}",
+            application, pkg_version, release_id
+        ),
+        format!("Creating new release version {} for application {}", pkg_version, application),
+    );
+
+    let created_experiment_response = create_experiment(
+        &state.superposition_configuration,
+        &superposition_org_id_from_env,
+        &workspace_name,
+        experiment_content,
+    )
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to create experiment: {:?}", e); // Log the detailed error
+        error::ErrorInternalServerError(format!("Failed to create experiment in Superposition"))
+    })?;
+
+    // Assuming 'id' is the field in CreateExperimentResponseContent and it has to_string()
+    // The actual type of created_experiment_response.id is models::ExperimentId (likely i64 or similar)
+    let experiment_id_for_ramping = created_experiment_response.id.to_string(); 
+
+    println!(
+        "Experiment {} created. Attempting to ramp to 100% traffic.",
+        experiment_id_for_ramping
+    );
+
+    let ramp_payload = models::RampExperimentRequestContent {
+        change_reason: format!(
+            "Auto-activating and ramping experiment for release {} (pkg_version {}) to 100% traffic.",
+            release_id, pkg_version
+        ),
+        traffic_percentage: 50,
+    };
+
+    match ramp_experiment(
+        &state.superposition_configuration,
+        &experiment_id_for_ramping,
+        &superposition_org_id_from_env, // x_org_id
+        &workspace_name,                // x_tenant (workspace_name)
+        ramp_payload,
+    )
+    .await
+    {
+        Ok(ramp_response) => {
+            println!(
+                "Successfully ramped experiment {}: {:?}",
+                experiment_id_for_ramping, ramp_response
+            );
+            // TODO: Optionally, check ramp_response (models::RampExperimentResponseContent) 
+            // to confirm status if the model provides it.
+        }
+        Err(e) => {
+            // Log the error, but proceed with creating the release in HyperOTA's DB.
+            // The user might need to manually activate/ramp the experiment in Superposition if this fails.
+            eprintln!(
+                "Failed to ramp experiment {}: {:?}. Release will be created, but experiment may need manual activation.",
+                experiment_id_for_ramping, e
+            );
+        }
+    }
+
     let new_release = ReleaseEntry {
         id: release_id,
         org_id: organisation,
@@ -154,7 +277,7 @@ async fn create(
         metadata: req
             .metadata
             .clone()
-            .unwrap_or_else(|| serde_json::json!({})),
+            .unwrap_or_else(|| serde_json::json!({}))
     };
 
     diesel::insert_into(releases)
