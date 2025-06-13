@@ -5,7 +5,7 @@ import CreateApplication from "./organization/CreateApplication";
 import ApplicationDetails from "./organization/ApplicationDetails";
 import { useNavigate } from "react-router-dom";
 import { Plus, ChevronRight, Trash2, Building2, Users, Zap } from "lucide-react";
-import smallLogoImage from '../assets/hyperota-cube-logo.png';
+import smallLogoImage from '../assets/airborne-cube-logo.png';
 import axios from "../api/axios"; 
 
 // Types
@@ -233,10 +233,10 @@ export default function Home({
           <div className="p-6 border-b border-white/10">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-10 h-10 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center">
-                <img src={smallLogoImage} alt="HyperOTA Logo" className="w-6 h-6" />
+                <img src={smallLogoImage} alt="Airborne Logo" className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white">HyperOTA</h1>
+                <h1 className="text-xl font-bold text-white">Airborne</h1>
                 <p className="text-xs text-white/60">Organization Management</p>
               </div>
             </div>
@@ -346,10 +346,10 @@ export default function Home({
                   {/* Logo and Title */}
                   <div className="mb-8">
                     <div className="w-20 h-20 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/20">
-                      <img src={smallLogoImage} alt="HyperOTA Logo" className="w-12 h-12" />
+                      <img src={smallLogoImage} alt="Airborne Logo" className="w-12 h-12" />
                     </div>
                     <h1 className="text-4xl font-bold text-white mb-4 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-                      Welcome to HyperOTA
+                      Welcome to Airborne
                     </h1>
                     <p className="text-lg text-white/70 leading-relaxed">
                       {organisations.length === 0 

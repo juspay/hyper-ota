@@ -1,1 +1,1 @@
-# Hyper OTA iOS SDK
+# Airborne iOS SDK

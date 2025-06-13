@@ -5,7 +5,7 @@ import { User } from "../../types"; // Adjusted path
 import axios from "../../api/axios"; // Adjusted path
 import { IconEyeClosed } from "../icons/IconEyeClosed"; // Adjusted path
 import { IconEyeOpen } from "../icons/IconEyeOpen"; // Adjusted path
-import logoImage from '../../assets/hyperota-cube-logo.png';
+import logoImage from "../../assets/airborne-cube-logo.png"; // Adjusted path
 
 interface LoginFormProps {
   setIsAuthenticated: (isAuthenticated: boolean) => void;
@@ -197,7 +197,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ setIsAuthenticated, setUse
           {/* Logo with subtle float animation */}
           <img 
             src={logoImage} 
-            alt="HyperOTA Logo" 
+            alt="Airborne Logo" 
             className="w-16 h-16 sm:w-20 sm:h-20 drop-shadow-lg relative z-20 animate-logo-float"
           />
           
@@ -207,8 +207,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ setIsAuthenticated, setUse
           ></div>
         </div>
         
-        {/* HyperOTA Text - Protected from glow effects */}
-        <h2 className="text-2xl sm:text-3xl font-bold text-white text-center relative z-30" style={{ isolation: 'isolate', mixBlendMode: 'normal' }}>HyperOTA</h2>
+        {/* Airborne Text - Protected from glow effects */}
+        <h2 className="text-2xl sm:text-3xl font-bold text-white text-center relative z-30" style={{ isolation: 'isolate', mixBlendMode: 'normal' }}>Airborne</h2>
       </div>
 
       {error.isError && (

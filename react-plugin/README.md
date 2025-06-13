@@ -1,18 +1,18 @@
-# react-native-hyperota
+# react-native-airborne
 
-hyper ota
+airborne
 
 ## Installation
 
 ```sh
-npm install react-native-hyperota
+npm install react-native-airborne
 ```
 
 ## Usage
 
 
 ```js
-import { multiply } from 'react-native-hyperota';
+import { multiply } from 'react-native-airborne';
 
 // ...
 
