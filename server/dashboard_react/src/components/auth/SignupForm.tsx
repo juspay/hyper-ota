@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "../../api/axios"; // Adjusted path
 import { IconEyeClosed } from "../icons/IconEyeClosed"; // Adjusted path
 import { IconEyeOpen } from "../icons/IconEyeOpen"; // Adjusted path
-import logoImage from '../../assets/hyperota-cube-logo.png';
+import logoImage from '../../assets/airborne-cube-logo.png';
 
 interface SignupFormData {
   name: string;
@@ -150,7 +150,7 @@ export const SignupForm: React.FC = () => {
           {/* Logo with subtle float animation */}
           <img 
             src={logoImage} 
-            alt="HyperOTA Logo" 
+            alt="Airborne Logo" 
             className="w-16 h-16 sm:w-20 sm:h-20 drop-shadow-lg relative z-20 animate-logo-float"
           />
           

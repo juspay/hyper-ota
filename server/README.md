@@ -1,6 +1,6 @@
-Hyper OTA Server
+Airborne Server
 
-Backend to support SAAS offering of Hyper OTA SDK
+Backend to support SAAS offering of Airborne SDK
 
 Server
 - Built Routes
@@ -133,13 +133,13 @@ The final level being single application read
 
 Steps Clear and recreate Database
 psql -U <user> -d postgres
-DROP DATABASE hyperotaserver;
+DROP DATABASE airborneserver;
 DROP DATABASE config;
 
 psql postgres
-CREATE DATABASE hyperotaserver OWNER <user>;
+CREATE DATABASE airborneserver OWNER <user>;
 CREATE DATABASE config OWNER <user>;
-GRANT ALL PRIVILEGES ON DATABASE hyperotaserver TO <user>;
+GRANT ALL PRIVILEGES ON DATABASE airborneserver TO <user>;
 GRANT ALL PRIVILEGES ON DATABASE config TO <user>;
 
 diesel migration run 
@@ -201,7 +201,7 @@ Steps to setup account in keycloak
 1. **Clone the Repository**
 ```bash
 git clone <repository-url>
-cd hyper-ota/server
+cd airborne/server
 ```
 
 2. **Start the Server**
@@ -238,7 +238,7 @@ detach - detach|nodetach (default: nodetach)
 - LocalStack (AWS services emulator)
 - Superposition (Configuration management)
 - PostgreSQL databases
-  - hyperotaserver
+  - airborneserver
   - config
   - keycloak-db
 

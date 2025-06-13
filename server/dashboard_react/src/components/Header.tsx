@@ -1,6 +1,6 @@
 import { User, LogOut } from "lucide-react";
 import { useState } from "react";
-import smallLogoImage from '../assets/hyperota-cube-logo.png'; // Assuming this is the correct path
+import smallLogoImage from '../assets/airborne-cube-logo.png'; // Assuming this is the correct path
 
 interface HeaderProps {
   userName: string;
@@ -15,8 +15,8 @@ export default function Header({ userName, userEmail, onLogout }: HeaderProps) {
     <header className="bg-gradient-to-r from-slate-900 via-neutral-800 to-slate-900 text-slate-200 py-4 px-6 shadow-lg font-sans">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <img src={smallLogoImage} alt="HyperOTA Logo" className="w-7 h-7" />
-          <h1 className="text-xl font-semibold">HyperOTA</h1>
+          <img src={smallLogoImage} alt="Airborne Logo" className="w-7 h-7" />
+          <h1 className="text-xl font-semibold">Airborne</h1>
         </div>
         <div className="relative">
           <button

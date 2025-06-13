@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import decorativeImage from '../../assets/login-decorative-image.jpeg';
-import smallLogoImage from '../../assets/hyperota-cube-logo.png'; // Assuming this is the correct small logo
+import smallLogoImage from '../../assets/airborne-cube-logo.png'; // Assuming this is the correct small logo
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -26,8 +26,8 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
             className="absolute inset-0 w-full h-full object-cover"
           />
           <div className="absolute top-6 left-6 z-10 flex items-center space-x-2">
-            <img src={smallLogoImage} alt="HyperOTA Small Logo" className="w-7 h-7" />
-            <span className="text-white font-semibold text-lg">HyperOTA</span>
+            <img src={smallLogoImage} alt="Airborne Small Logo" className="w-7 h-7" />
+            <span className="text-white font-semibold text-lg">Airborne</span>
           </div>
         </div>
         {/* Right Panel - Content via children */}
