@@ -1,0 +1,61 @@
+# Xcode
+#
+build/
+DerivedData/
+*.xcworkspace
+!Pods/*.xcworkspace  # keep the workspace inside Pods if you vend it
+*.xcuserstate
+*.xcscmblueprint
+
+# CocoaPods
+#
+Pods/
+Podfile.lock
+
+# Carthage (if ever used)
+#
+Carthage/Build/
+
+# Fastlane
+#
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Swift Package Manager
+#
+.swiftpm
+.build/
+Packages/
+
+# User-specific
+#
+*.moved-aside
+*.swp
+*.orig
+*.DS_Store
+*.idea/
+*.vscode/
+
+# Archives
+#
+*.xcarchive
+
+# Playgrounds
+#
+timeline.xctimeline
+playground.xcworkspace
+
+# Signing
+#
+*.mobileprovision
+*.cer
+*.p12
+
+# Misc
+#
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
