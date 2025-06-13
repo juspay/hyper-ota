@@ -114,9 +114,9 @@ internal class UpdateTask(
 
     init {
         tracker.let { trackers.add(it) }
-        for ((key, value) in rcHeaders ?: emptyMap()) {
-            defaultHeaders[key] = value
-        }
+        val sortedHeaders = (rcHeaders ?: emptyMap()).toSortedMap()
+        val headersString = sortedHeaders.entries.joinToString(";") { "${it.key}=${it.value}" }
+        defaultHeaders["x-dimension"] = headersString
     }
 
     fun updateReleaseConfig(newConfig: ReleaseConfig?) {
