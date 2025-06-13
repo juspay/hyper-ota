@@ -1,0 +1,9 @@
+platform :ios, '12.0'
+use_frameworks!
+
+target 'Airborne_Tests' do
+  pod 'HyperOTA',  '0.0.4'
+  pod 'HyperCore', '0.0.6'
+
+  pod 'Airborne', :path => '../'
+end
