@@ -2065,6 +2065,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mockall",
+ "rand 0.8.5",
  "reqwest 0.12.18",
  "serde",
  "serde_json",
@@ -3720,7 +3721,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "superposition-rust-sdk"
 version = "1.0.0"
-source = "git+https://github.com/anuragdvd/superposition-rust-sdk?branch=feat%2Fsmithy-rust-test#cc99b060b73fdc1c3f2a88b4d5c989923baa52ff"
+source = "git+https://github.com/anuragdvd/superposition-rust-sdk?rev=166b01c291ef01ba585b156c8751afbd3a4e5586#166b01c291ef01ba585b156c8751afbd3a4e5586"
 dependencies = [
  "reqwest 0.12.18",
  "serde",

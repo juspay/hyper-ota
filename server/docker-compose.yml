@@ -143,6 +143,7 @@ services:
       KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-hyperOTA}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-hyperota}
+      KEYCLOAK_EXTERNAL_URL: ${KEYCLOAK_EXTERNAL_URL:-http://localhost:8180}
 
       # AWS settings
       AWS_BUCKET: ${AWS_BUCKET:-test}

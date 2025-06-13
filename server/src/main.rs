@@ -40,6 +40,8 @@ async fn main() -> std::io::Result<()> {
     // Load Environment variables
     dotenv().ok(); // Load .env file
     let url = std::env::var("KEYCLOAK_URL").expect("KEYCLOAK_URL must be set");
+    let keycloak_external_url = std::env::var("KEYCLOAK_EXTERNAL_URL")
+        .unwrap_or_else(|_| url.replace("keycloak:8080", "localhost:8180"));
     let client_id = std::env::var("KEYCLOAK_CLIENT_ID").expect("KEYCLOAK_CLIENT_ID must be set");
     let enc_sec = std::env::var("KEYCLOAK_SECRET").expect("KEYCLOAK_SECRET must be set"); // Move this to AWS KMS
     let realm = std::env::var("KEYCLOAK_REALM").expect("KEYCLOAK_REALM must be set");
@@ -70,6 +72,7 @@ async fn main() -> std::io::Result<()> {
     let env = types::Environment {
         public_url,
         keycloak_url: url,
+        keycloak_external_url,
         keycloak_public_key: format!(
             "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
             publickey

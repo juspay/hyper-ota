@@ -19,7 +19,7 @@ use actix_web::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use superposition_rust_sdk::apis::default_api::get_resolved_config;
+use superposition_rust_sdk::apis::default_api::{applicable_variants, get_resolved_config};
 
 use crate::utils::{db::schema::hyperotaserver::configs::dsl::{
     app_id as config_app_id, configs as configs_table, org_id as config_org_id,
@@ -325,13 +325,13 @@ async fn serve_release(
 
     let package_index = if !package_data.use_urls {
         format!(
-            "{}/assets/{}/{}/{}/{}",
-            &state.env.public_url,
-            &package_data.org_id,
-            &package_data.app_id,
-            package_data.version,
-            package_data.index
-        )
+                "{}/assets/{}/{}/{}/{}",
+                &state.env.public_url,
+                &package_data.org_id,
+                &package_data.app_id,
+                package_data.version,
+                package_data.index
+            )
     } else {
         package_data.index.clone()
     };
@@ -367,6 +367,7 @@ async fn serve_release(
 #[get("v2/{organisation}/{application}")]
 async fn serve_release_v2(
     path: web::Path<(String, String)>,
+    query: web::Query<std::collections::HashMap<String, String>>,
     state: web::Data<AppState>,
 ) -> Result<Json<ReleaseConfig>> {
     let (organisation, application) = path.into_inner();
@@ -385,6 +386,31 @@ async fn serve_release_v2(
     let workspace_name = get_workspace_name_for_application(&application, &organisation, &mut conn).await
         .map_err(|e| error::ErrorInternalServerError(format!("Failed to get workspace name: {}", e)))?;
 
+    // Extract context from query if provided
+    let context = if let Some(context) = query.get("context") {
+        serde_json::from_str(context).unwrap_or(json!({}))
+    } else {
+        json!({})
+    };
+
+    println!("workspace_name: {}", workspace_name);
+    println!("superposition_org_id_from_env: {}", superposition_org_id_from_env);
+
+    println!("Using context: {:?}", context);
+
+    let applicable_variants  = applicable_variants( 
+        &state.superposition_configuration,
+        &superposition_org_id_from_env,
+        &workspace_name)
+        .await
+        .map_err(|e| {
+            error::ErrorInternalServerError(format!("Failed to get applicable variants: {}", e))
+        })?;
+
+    let mut context_with_variants = context.as_object().unwrap_or(&serde_json::Map::new()).clone();
+    context_with_variants.insert("variants".to_string(), json!(applicable_variants));
+    let final_context = serde_json::Value::Object(context_with_variants);
+
     let config = get_resolved_config(
         &state.superposition_configuration,
         &superposition_org_id_from_env,
@@ -393,7 +419,7 @@ async fn serve_release_v2(
         None,
         None,
         Some(superposition_rust_sdk::models::MergeStrategy::Merge),
-        Some(json!({})),
+        Some(final_context),
     )
     .await
     .map_err(|e| error::ErrorInternalServerError(format!("Failed to get config: {}", e)))?;

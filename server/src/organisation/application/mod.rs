@@ -41,6 +41,7 @@ use crate::utils::db::models::{NewWorkspaceName, WorkspaceName};
 mod config;
 mod package;
 mod release;
+mod dimension;
 
 use diesel::prelude::*;
 use diesel::ExpressionMethods;
@@ -52,6 +53,7 @@ pub fn add_routes() -> Scope {
         .service(Scope::new("/package").service(package::add_routes()))
         .service(Scope::new("/release").service(release::add_routes()))
         .service(Scope::new("/config").service(config::add_routes()))
+        .service(Scope::new("/dimension").service(dimension::add_routes()))
 }
 
 #[derive(Serialize, Deserialize)]

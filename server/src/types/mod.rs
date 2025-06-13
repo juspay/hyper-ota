@@ -28,6 +28,7 @@ pub struct AppState {
 pub struct Environment {
     pub public_url: String,
     pub keycloak_url: String,
+    pub keycloak_external_url: String,
     pub keycloak_public_key: String,
     pub client_id: String,
     pub secret: String,
