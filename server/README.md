@@ -1,251 +1,342 @@
-Airborne Server
+# Airborne Server
 
-Backend to support SAAS offering of Airborne SDK
+The Airborne Server is a robust backend system designed to power the Software-as-a-Service (SaaS) offering of the Airborne SDK. It provides comprehensive management capabilities for users, organizations, applications, software packages, configurations, and release cycles, enabling seamless and controlled Over-The-Air (OTA) updates for client applications.
 
-Server
-- Built Routes
-  - /user 
-      - GET 
-      - return complete user state
-      - Queries keycloak for user access level and which orgs and applications he belongs to
-    /user/login
-      - POST
-      - Calls open connect API of key cloak; Forwards the issued token; No caching
-      - Calls /user to get user state
-    /user/create
-      - POST
-      - Creates a user in keycloak using service account
-      - Calls /login to get required result type
-  
-  - /organisation/create
-      - POST
-      - Creates a group in keycloak
-      - Creates a owner group in keycloak; As a child to the organisation group
-      - Assigns the user as a member of the owner group
-      - Creates an organisation in CAC
-      - Adds a db entry to map keycloak id to CAC id
-    /organisation/application/create
-      - POST
-      - Creates a group in keycloak; As a child to the organisation group
-      - Creates a admin group in keycloak; As a child to the application group
-      - Assigns the user as a member of the admin group
-      - Creates a workspace in CAC
-      - Adds default CAC config
+## Key Features
 
-  - /dashboard/*
-      - POST
-      - Serves admin UI for ota server
+*   **Multi-Tenant Architecture:** Securely manage multiple organizations and their respective applications.
+*   **Granular Access Control:** Leverages Keycloak for fine-grained user permissions and roles.
+*   **Flexible Package Management:** Supports versioning and distribution of application packages.
+*   **Dynamic Configuration:** Manage application configurations and release-specific settings.
+*   **Controlled Releases:** Facilitates staged rollouts and management of application releases.
+*   **Transactional Integrity:** Ensures consistency across distributed operations involving Keycloak, Superposition, and S3.
+*   **Admin Dashboard:** A React-based user interface for server administration and monitoring.
 
-- Pending Routes
-  - /organisation/application/user/create
-  - /organisation/application/user/update
-  - /organisation/application/user/delete
-  - /organisation/application/delete
-  - /organisation/application/users
+## Table of Contents
 
-  - /organisation/user/create
-  - /organisation/user/update
-  - /organisation/user/delete
-  - /organisation/delete
-  - /organisation/user/list
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [API Reference](#api-reference)
+  - [Authentication](#authentication)
+  - [User Management](#user-management)
+  - [Organization Management](#organization-management)
+  - [Application Management](#application-management)
+  - [Package Management](#package-management)
+  - [Configuration Management](#configuration-management)
+  - [Release Management (Application Level)](#release-management-application-level)
+  - [Public Release Endpoints](#public-release-endpoints)
+  - [Dashboard Access](#dashboard-access)
+- [Database Architecture](#database-architecture)
+- [Keycloak Integration](#keycloak-integration)
+- [Development Environment](#development-environment)
+  - [Prerequisites](#prerequisites)
+  - [Environment Variables](#environment-variables)
+  - [Database Migrations](#database-migrations)
+  - [Running the Server](#running-the-server)
+  - [Services Started](#services-started)
+  - [Development Workflow](#development-workflow)
+- [Contributing](#contributing)
+- [License](#license)
 
-  - /organisation/application
-    - Indicating that packages can be shared between their clients
-  - /organisation/application/package/create
-    - This includes uploading files as well
-  - /organisation/application/release/create
-    - Config and resource updates can be done here
-    - Do I have the UI get the entire current value?
-  - /organisation/application/release/abort
-  - /organisation/application/release/conclude
-  - /organisation/application/release/ramp
-    - This will be useful for external systems to monitor and increase the stagger percentage
-  
-  - /organisation/application/create_dimension 
-    - Allow the user to add his own dimensions to control
-    - Find out how he will send dimensions
-  
-  - /<org_id>/<app_id>/release-config
+## Overview
 
-  - Settings
-      - Application level settings
-        - Resource as split - This can be a key in CAC
-          - Have files pushed with the resource
-      - Package lebel settings
-        - Version splits
+The Airborne Server acts as the central nervous system for delivering updates to applications. It handles the complexities of storing package assets (via AWS S3), managing configurations (via Superposition and its internal database), and authenticating/authorizing users (via Keycloak). This allows development teams to focus on building features while relying on a stable platform for update distribution.
 
+## API Reference
 
-- Plugins
-  - Signature plugin
-  - Sign and add header during upload phase;
-  - See how to add plugins; Do they come in during complition phase
+All API endpoints are versioned and adhere to RESTful principles. Authentication is primarily handled through JWT Bearer tokens issued by Keycloak. Specific permissions are required for various operations, as detailed below.
+The base path for all API routes is implicitly defined by the Actix web server configuration in `main.rs`.
 
-- Database
-  Organisation - TABLE used to map org to super position org; TO BE REMOVED; Use single Org
-  - Organisation | Superposition Organisation
+### Authentication
+Authentication is managed via Keycloak. Most endpoints require a valid JWT Bearer token.
 
-  Packages - TABLE used to store a list of packages
-  - id | version | app_id | org_id | index | version_splits | use_urls | contents | created by | created at
+### User Management
+Base Path: `/users` (for creation/login), `/user` (for fetching authenticated user details)
 
-  Application DB is superposition
-  Default config
-  - package.version	- Current live package
-  - package.name - This is always the application name; Can be removed; Or be replaced as display name
-  - config.package_timeout - Download time out for package
-  - config.release_config_timeout	- Download timeout for the release config
-  - config.version - Version of the release config. Might need to see if this requires semantic or user controlled?
+*   **`POST /users/create`**: Registers a new user.
+    *   **Request Body**: `application/json` - `{ "name": "username", "password": "userpassword" }`
+    *   **Response**: `application/json` - User details including a JWT token.
+*   **`POST /users/login`**: Authenticates an existing user.
+    *   **Request Body**: `application/json` - `{ "name": "username", "password": "userpassword" }`
+    *   **Response**: `application/json` - User details including a JWT token.
+*   **`GET /user`**: Retrieves details for the currently authenticated user, including their organizational affiliations.
+    *   **Authentication**: Required.
+    *   **Response**: `application/json` - User profile and organization data.
 
-- Isolation
-  - Bucket : One bucket for all merchants; Separate folder will be allocated; asset/{org}/{app}/{version}/{file}
-  - CAC : Separate workspace for each application
-  - DB : Presently there is no isolation here. Might need to see if packages table needs to be in a different schema?
+### Organization Management
+Base Path: `/organisations`
 
-- Security
-  - Piggybacking on keycloak
-  - Accounts to be issued service accout secrets
-  - Details in ACL section
+*   **`POST /organisations/create`**: Establishes a new organization.
+    *   **Authentication**: Required.
+    *   **Request Body**: `application/json` - `{ "name": "organisation_name" }`
+    *   **Response**: `application/json` - Details of the newly created organization.
+*   **`DELETE /organisations/{org_name}`**: Removes an existing organization.
+    *   **Authentication**: Required (Owner/Admin permissions for the organization).
+    *   **Path Parameter**: `org_name` (string) - The name of the organization to delete.
+    *   **Response**: `application/json` - Success confirmation.
+*   **`GET /organisations`**: Lists all organizations accessible to the authenticated user.
+    *   **Authentication**: Required.
+    *   **Response**: `application/json` - Array of organization objects.
 
-CLI
-- Generate Files and Release config
-- Provide local and sdk server 
+#### Organization User Management
+Base Path: `/organisation/user` (Operations are scoped to the organization context derived from the user's token)
 
+*   **`POST /organisation/user/create`**: Adds a user to the current organization with a specified access role.
+    *   **Authentication**: Required (Write permissions for the organization).
+    *   **Request Body**: `application/json` - `{ "user": "username", "access": "read|write|admin|owner" }`
+    *   **Response**: `application/json` - Success confirmation.
+*   **`POST /organisation/user/update`**: Modifies a user's access role within the current organization.
+    *   **Authentication**: Required (Admin permissions for the organization).
+    *   **Request Body**: `application/json` - `{ "user": "username", "access": "read|write|admin|owner" }`
+    *   **Response**: `application/json` - Success confirmation.
+*   **`POST /organisation/user/remove`**: Removes a user from the current organization.
+    *   **Authentication**: Required (Admin permissions for the organization).
+    *   **Request Body**: `application/json` - `{ "user": "username" }`
+    *   **Response**: `application/json` - Success confirmation.
+*   **`GET /organisation/user/list`**: Retrieves a list of all users within the current organization, including their roles.
+    *   **Authentication**: Required (Read permissions for the organization).
+    *   **Response**: `application/json` - Array of user information objects.
 
-ACL
-I'm thinking of a hierarchy where I would have users, organisations and application
-A user can be in multiple organisations.
+### Application Management
+Base Path: `/organisations/applications` (Scoped to the organization context from the user's token)
 
-Every user can create an organisation for himself; Where he would get an owner ACL
-Other users added to the org can maximum have an admin role
-1. create applications
-2. change access of other users (other than owner)
-3. change organisation settings
+*   **`POST /organisations/applications/create`**: Creates a new application within the current organization.
+    *   **Authentication**: Required (Write permissions for the organization).
+    *   **Request Body**: `application/json` - `{ "application": "application_name" }`
+    *   **Response**: `application/json` - Details of the newly created application.
 
-The next level of access; Would be single application admin
-1. give access to other users to that application
-2. change application settings
+### Package Management
+Base Path: `/organisations/applications/package` (Scoped to the organization and application context from the user's token)
 
-The next level will be single application write.
-1. change application settings
+*   **`GET /organisations/applications/package`**: Lists all software packages for the current application.
+    *   **Authentication**: Required (Read permissions for the application).
+    *   **Response**: `application/json` - Array of package detail objects.
+*   **`POST /organisations/applications/package/create_json`**: Creates a new package version using a comprehensive JSON manifest.
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `application/json` - Detailed JSON structure defining package configuration and manifest.
+    *   **Response**: `application/json` - `{ "version": new_package_version }`.
+*   **`POST /organisations/applications/package/create_package_json_v1`**: Creates a new package version using a V1 JSON structure.
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `application/json` - JSON defining package information and associated resources.
+    *   **Response**: `application/json` - `{ "version": new_package_version }`.
+*   **`POST /organisations/applications/package/create_json_v1_multipart`**: Creates a new package version using a V1 JSON structure, supporting an optional index file upload via multipart/form-data.
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `multipart/form-data`
+        *   `json` (Text): JSON string containing package details.
+        *   `index` (File, Optional): The main index file for the package.
+    *   **Response**: `application/json` - `{ "version": new_package_version }`.
 
-The final level being single application read
-1. view application settings
+### Configuration Management
+Base Path: `/organisations/applications/config` (Scoped to the organization and application context from the user's token)
 
+*   **`POST /organisations/applications/config/create_json_v1`**: Creates a new configuration associated with the latest package version.
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `application/json` - JSON defining configuration version, timeouts, and properties.
+    *   **Response**: `application/json` - `{ "version": package_version, "config_version": "config_version_string" }`.
+*   **`POST /organisations/applications/config/create_json_v1/multipart`**: Creates a new configuration via multipart/form-data (primarily for JSON payload).
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `multipart/form-data` - `json` (Text): JSON string for the configuration.
+    *   **Response**: `application/json` - `{ "version": package_version, "config_version": "config_version_string" }`.
 
-Steps Clear and recreate Database
-psql -U <user> -d postgres
-DROP DATABASE airborneserver;
-DROP DATABASE config;
+### Release Management (Application Level)
+Base Path: `/organisations/applications/release` (Scoped to the organization and application context from the user's token)
 
-psql postgres
-CREATE DATABASE airborneserver OWNER <user>;
-CREATE DATABASE config OWNER <user>;
-GRANT ALL PRIVILEGES ON DATABASE airborneserver TO <user>;
-GRANT ALL PRIVILEGES ON DATABASE config TO <user>;
+*   **`POST /organisations/applications/release/create`**: Initiates a new release for an application, linking a package version with its configuration.
+    *   **Authentication**: Required (Write permissions for the application).
+    *   **Request Body**: `application/json` - `{ "version_id": "optional_package_version_id", "metadata": { ... } }` (If `version_id` is omitted, the latest package is used).
+    *   **Response**: `application/json` - Details of the created release.
+*   **`GET /organisations/applications/release/history`**: Retrieves the release history for the current application.
+    *   **Authentication**: Required (Read permissions for the application).
+    *   **Response**: `application/json` - Array of release history entries.
 
-diesel migration run 
-make db-init # in superposition
+### Public Release Endpoints
+Base Path: `/release` (These endpoints are typically public and consumed by client SDKs)
 
-delete all users and groups in keycloak under your realm
+*   **`GET /release/{organisation}/{application}`**: Serves the live release configuration for a specified organization and application. (Legacy endpoint)
+    *   **Response**: `application/json` - Combined release configuration, including package details and resources.
+*   **`GET /release/v2/{organisation}/{application}`**: Serves the V2 live release configuration. This version resolves the workspace name to fetch configuration from Superposition and defaults to the latest package if version "0" is specified in Superposition.
+    *   **Response**: `application/json` - Combined V2 release configuration.
 
-Steps to setup account in keycloak
-1. Login to keycloak
-2. Create realm in realm drop down
-3. Add KEYCLOAK_REALM in .env as realm name
-4. Create Client
-    - Type : OpenID Connect
-    - ClientID : <any lower case - separated>
-    - Rest anything works
-5. Capabilty Config
-    - Client authentication - On
-    - Client authorization - On
-    - OAuth 2.0 Device Authorization Grant
-    - Direct Access Grant
-6. Login Settings
-    - Root url, Web Origins : http://localhost:9000
-    - Everything else : http://localhost:9000/dashboard/
-7. Add KEYCLOAK_CLIENT_ID in env
-8. Add KEYCLOAK_SECRET in env from Credentials page under your client
-9. Add KEYCLOAK_URL if not done earlier
-10. Create a client scope
-    - Name : Audience Scope
-    - Description : Add correct aud to JWT token issued by keycloak
-    - Protocol : OpenIDConnect
-11. Add mapper in Client Scope
-    - Mapper Type : Audience
-    - Name : OTA Server Client Mapper
-    - Add to Access Token : On
-    - Add to introspection : On
-    - Included Client Audience : Client created above
-12. Add Audience Scope to Client with Default Assigned type
-13. Add Service account roles
-    - manage-users
-    - query-users
-    - view-users
-    - More are needed -- TODO find out
-13. Add Client roles
-    - manage-users
-    - query-users
-    - view-users
-    - More are needed -- TODO find out
-14. Goto realm settings; Turn off all required actions
+### Dashboard Access
+Base Path: `/dashboard`
 
-## Quick Start
+*   **`GET /dashboard/*`**: Serves static assets for the Airborne Server's administrative dashboard (React application).
+    *   Requests to paths under `/dashboard` will serve files from the `./dashboard_react/dist` directory, with `index.html` as the default fallback for client-side routing.
+
+## Database Architecture
+
+The server utilizes a PostgreSQL database, `airborneserver`, to persist its operational data. The schema is organized as follows:
+
+1.  **`packages`**: Manages versions of application software packages.
+    *   **Purpose**: Stores metadata and asset information for each package version deployable via OTA updates.
+    *   **Key Columns**:
+        *   `id` (UUID, PK): Unique identifier.
+        *   `version` (Integer): Package version number, scoped to `app_id`.
+        *   `app_id` (Text): Foreign key to the application.
+        *   `org_id` (Text): Foreign key to the organization.
+        *   `index` (Text): Path/name of the package's main entry file (e.g., `index.jsa`).
+        *   `version_splits` (Boolean): Indicates if assets are stored in version-specific S3 paths.
+        *   `use_urls` (Boolean): Determines if `important`/`lazy` fields contain full URLs or relative paths.
+        *   `important` (JSONB): Array of critical file objects (`{ "url": "...", "filePath": "..." }`).
+        *   `lazy` (JSONB): Array of on-demand file objects (`{ "url": "...", "filePath": "..." }`).
+        *   `properties` (JSONB): Custom metadata (e.g., manifest, hashes).
+        *   `resources` (JSONB): Additional associated resources.
+
+2.  **`configs`**: Stores configurations linked to specific package versions.
+    *   **Purpose**: Allows for versioned configurations that can be applied to different package releases.
+    *   **Key Columns**:
+        *   `id` (Integer, PK, Auto-increment): Unique identifier.
+        *   `org_id` (Text): Foreign key to the organization.
+        *   `app_id` (Text): Foreign key to the application.
+        *   `version` (Integer): Package version this configuration applies to.
+        *   `config_version` (Text): User-defined version string for this configuration content.
+        *   `release_config_timeout` (Integer): Timeout (ms) for fetching release configuration.
+        *   `package_timeout` (Integer): Timeout (ms) for downloading the package.
+        *   `tenant_info` (JSONB): Tenant-specific settings.
+        *   `properties` (JSONB): General configuration properties.
+        *   `created_at` (Timestamp): Creation timestamp.
+
+3.  **`releases`**: Logs official software releases for applications.
+    *   **Purpose**: Tracks the history of deployed releases, linking packages and configurations.
+    *   **Key Columns**:
+        *   `id` (UUID, PK): Unique identifier.
+        *   `org_id` (Text): Foreign key to the organization.
+        *   `app_id` (Text): Foreign key to the application.
+        *   `package_version` (Integer): Version of the `packages` entry used.
+        *   `config_version` (Text): `config_version` from the `configs` entry used.
+        *   `created_at` (Timestamptz): Release creation timestamp.
+        *   `created_by` (Text): ID of the user who initiated the release.
+        *   `metadata` (JSONB): Custom metadata for the release.
+
+4.  **`cleanup_outbox`**: Facilitates transactional consistency for distributed operations.
+    *   **Purpose**: Implements an outbox pattern to manage rollbacks or retries for operations spanning multiple services (Keycloak, Superposition, S3).
+    *   **Key Columns**:
+        *   `transaction_id` (Text, PK): Unique transaction identifier.
+        *   `entity_name` (Text): Identifier of the primary entity involved (e.g., org name).
+        *   `entity_type` (Text): Type of operation (e.g., "organisation_create").
+        *   `state` (JSONB): Stores information about created resources for potential rollback.
+        *   `created_at` (Timestamptz): Transaction initiation time.
+        *   `attempts` (Integer): Number of processing attempts.
+        *   `last_attempt` (Nullable Timestamptz): Timestamp of the last attempt.
+
+5.  **`workspace_names`**: Ensures unique Superposition workspace names.
+    *   **Purpose**: Maps an internal auto-incrementing ID to an organization and a generated Superposition workspace name, preventing naming conflicts.
+    *   **Key Columns**:
+        *   `id` (Integer, PK, Auto-increment): Unique internal ID.
+        *   `organization_id` (Text): Associated organization ID.
+        *   `workspace_name` (Text): The unique workspace name (e.g., "workspace123").
+
+## Keycloak Integration
+
+Keycloak is integral to the Airborne Server's security and operational model. It serves the following critical functions:
+
+-   **Identity and Access Management (IAM)**: Provides robust user authentication (username/password) and manages user identities.
+-   **Token-Based Authentication**: Issues JSON Web Tokens (JWTs) upon successful login. These tokens are used as Bearer tokens to authenticate API requests to protected endpoints.
+-   **Authorization and Permissions**: Manages user roles and permissions through a group-based hierarchy. Organizations and applications are represented as groups in Keycloak, with sub-groups defining access levels (e.g., `owner`, `admin`, `write`, `read`).
+-   **Service Accounts**: Utilized for server-to-server communication between the Airborne Server and Keycloak for administrative tasks like user creation or group management, without requiring user credentials.
+
+The server validates incoming JWTs, extracts user identity and associated permissions (derived from group memberships), and enforces access control rules for all protected resources and operations.
+
+## Development Environment
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Git
+To set up the development environment for the Airborne Server, you will need the following software installed:
 
-### One-Command Setup
+*   **Docker and Docker Compose**: Essential for running the containerized services (Keycloak, PostgreSQL, LocalStack, Superposition).
+*   **Git**: For version control and cloning the repository.
+*   **Rust Toolchain**: Required for building and running the Actix-based server application. Ensure you have `cargo` and `rustc` installed.
 
-1. **Clone the Repository**
-```bash
-git clone <repository-url>
-cd airborne/server
-```
+### Environment Variables
 
-2. **Start the Server**
-```bash
-# Development mode
-./run.sh dev
+The server relies on a set of environment variables for its configuration. These are typically managed in a `.env` file at the root of the `server/` directory. Critical variables include:
 
-# Or with building images
-./run.sh dev build
+*   `KEYCLOAK_URL`: URL of the Keycloak instance.
+*   `KEYCLOAK_CLIENT_ID`: Client ID for the Airborne Server in Keycloak.
+*   `KEYCLOAK_SECRET`: Client secret (typically KMS encrypted for production).
+*   `KEYCLOAK_REALM`: Keycloak realm name.
+*   `KEYCLOAK_PUBLIC_KEY`: Public key for validating JWTs issued by Keycloak.
+*   `SUPERPOSITION_URL`: URL of the Superposition service.
+*   `SUPERPOSITION_ORG_ID`: The organization ID within Superposition used by the server.
+*   `AWS_BUCKET`: Name of the S3 bucket for storing package assets.
+*   `PUBLIC_ENDPOINT`: The public-facing URL for accessing assets stored in S3.
+*   `DATABASE_URL`: Connection string for the PostgreSQL database (typically KMS encrypted for production).
+*   AWS Credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`): For S3 and KMS access. `AWS_ENDPOINT_URL` may be needed for LocalStack.
 
-# Production mode
-./run.sh prod
+Refer to the provided `.env.example` or existing setup scripts (`scripts/encrypt_env.sh`, `scripts/generate_env.sh`) for guidance on populating these variables.
 
-# Run in detached mode
-./run.sh dev nobuild detach
-```
+### Database Migrations
 
-### Usage Options
+Database schema changes are managed using Diesel CLI.
 
-```bash
-./run.sh [mode] [build] [detach]
+*   **Applying Migrations**: To apply pending migrations, use the command:
+    ```bash
+    diesel migration run --database-url <your_decrypted_postgresql_connection_string>
+    ```
+*   **Automatic Migrations**: The server application is configured to attempt to run any pending migrations automatically upon startup.
 
-# Parameters:
-mode   - dev|prod (default: dev)
-build  - build|nobuild (default: nobuild)
-detach - detach|nodetach (default: nodetach)
-```
+### Running the Server
+
+The `run.sh` script orchestrates the setup and execution of the Airborne Server and its dependent services using Docker Compose.
+
+1.  **Clone the Repository**:
+    ```bash
+    git clone <repository-url>
+    cd hyper-ota/server
+    ```
+
+2.  **Configure Environment**: Create and populate the `.env` file as described in the "Environment Variables" section.
+
+3.  **Start Services**: Use the `run.sh` script with the desired options:
+    *   **Development Mode (with hot-reloading for the backend)**:
+        ```bash
+        ./run.sh dev
+        ```
+    *   **Development Mode (forcing Docker image rebuilds)**:
+        ```bash
+        ./run.sh dev build
+        ```
+    *   **Production Mode**:
+        ```bash
+        ./run.sh prod
+        ```
+    *   **Detached Mode (run services in the background)**:
+        ```bash
+        ./run.sh dev nobuild detach
+        # or
+        ./run.sh prod detach
+        ```
+
+    **`run.sh` Usage**:
+    ```
+    ./run.sh [mode] [build_option] [detach_option]
+    ```
+    *   `mode`: `dev` (default) or `prod`.
+    *   `build_option`: `build` or `nobuild` (default).
+    *   `detach_option`: `detach` or `nodetach` (default).
 
 ### Services Started
 
-- Backend API (http://localhost:8081)
-- Keycloak (http://localhost:8180)
-  - Default admin credentials: admin/admin
-- LocalStack (AWS services emulator)
-- Superposition (Configuration management)
-- PostgreSQL databases
-  - airborneserver
-  - config
-  - keycloak-db
+The `run.sh` script, through Docker Compose, typically starts the following services:
+
+*   **Airborne Backend API**: The core Rust application. Accessible typically on `http://localhost:9000` (as configured in `main.rs`), though Docker Compose might expose it on a different port (e.g., `8081`).
+*   **Keycloak**: IAM service. Accessible at `http://localhost:8180` (Default admin credentials: `admin/admin`).
+*   **LocalStack**: Emulates AWS services (S3, KMS) for local development.
+*   **Superposition**: Configuration management service.
+*   **PostgreSQL Databases**:
+    *   `airborneserver`: Main application database.
+    *   `config`: Potentially for Superposition or other configurations.
+    *   `keycloak-db`: Database used by Keycloak.
 
 ### Development Workflow
 
-The development mode (`./run.sh dev`) provides:
-- Hot-reloading for backend changes
-- Automatic service restarts
-- Debug logging
-- Development-specific configurations
+When running in `dev` mode (`./run.sh dev`):
+
+*   **Hot Reloading**: Changes to the backend Rust code trigger automatic recompilation and server restart.
+*   **Service Stability**: Docker Compose attempts to restart services if they crash.
+*   **Logging**: Debug-level logging is typically enabled for easier troubleshooting.
+*   **Configurations**: Development-specific configurations (e.g., LocalStack endpoints) are generally active.
+
+## License
+
+The Airborne Server is licensed under the Apache License, Version 2.0. See the [LICENSE](../LICENSE) file for more details.
