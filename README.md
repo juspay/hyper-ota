@@ -23,6 +23,103 @@ Airborne is primarily about enabling your applications with powerful update mech
 *   **[Airborne React Native Plugin](react-plugin/README.md)**: The ideal solution for React Native developers. This plugin allows you to manage OTA updates across both Android and iOS platforms with a unified JavaScript API. (Further details in its README).
 *   **[Airborne React Native Example](react-example/README.md)**: A practical example application demonstrating how to use the Airborne React Native Plugin and integrate it with an update source. (Further details in its README).
 
+## SDK Configuration and Download Flow Details
+
+This section delves into the specifics of the Airborne SDK's configuration file structure and the download/usage flows it manages.
+
+### Core Concepts
+
+We are seeing 2 broad categories of files that have to be downloaded:
+*   **Package**: An atomic unit, which consists of files and properties requiring all files to be present to boot. A package can be further divided into two sets:
+    *   **Important**: If these files are not present by the boot timeout, then this package is not used.
+    *   **Lazy**: If the priority files are downloaded by boot timeout, then these files will download in parallel and inform the application upon completion.
+*   **Resources**: These are files that will work in any combination. All resources that load before the boot timeout are used in that session.
+
+### Configuration File Structure
+
+The SDK requires a configuration file with the following structure:
+
+```json
+{
+  "version": "1",
+  "config": {
+    "version": "1.0.0",
+    "release_config_timeout": 1000,
+    "boot_timeout": 1000,
+    "properties": {}
+  },
+  "package": {
+    "name": "Application_Name",
+    "version": "1.0.0",
+    "index": {
+        "url": "https://assets.juspay.in/bundles/index.js",
+        "filePath": "index.js"
+      },
+    "properties": {},
+    "important": [
+      {
+        "url": "https://assets.juspay.in/bundles/initial.js",
+        "filePath": "initial.js"
+      }
+    ],
+    "lazy": [
+      {
+        "url": "https://assets.juspay.in/images/card.png",
+        "filePath": "card.png"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "url": "https://assets.juspay.in/configs/config.js",
+      "filePath": "config.js"
+    }
+  ]
+}
+```
+
+The above structure has 4 parts: `version`, `config`, `package`, and `resources`.
+
+*   **Version**: This is the version of the structure of the above file.
+*   **Config**: Contains the configuration for the SDK to decide the behavior of downloads. It contains the following keys:
+    *   `version`: Used to indicate the current version of the config.
+    *   `release_config_timeout`: Timeout for this file to complete downloading. This is used in the next session.
+    *   `boot_timeout`: Timeout for both the package and resource block to complete downloading. This is called boot time since it is an indicator that the application can use the package to begin booting.
+    *   `properties`: This is a user-defined field block which can be used to send any config keys to the application.
+*   **Package**: A package is an atomic unit. The package block as mentioned above is a transactional set of files. The package block contains the spec for the package. It contains the following keys:
+    *   `name`: The name of the application represented by this package.
+    *   `version`: The version of this package. Note: if the version is not changed, the SDK will not initiate the download of the package.
+    *   `properties`: This is a user-defined field block which can be used to send any config keys to configure their application. This block is used to send keys specific to this version of the package, unlike the block in `config` which will give the latest available.
+    *   `index`: A special entry for the file used as the entry point to the package.
+    *   `important`: List of files required at the start of the application. The application cannot boot without these files.
+    *   `lazy`: List of files which extend the `important` block; This can be used for non-critical code files, images, etc.
+*   **Resources**: List of files which will attempt to download before the `boot_timeout`. All files that complete before timeout will be available during boot.
+
+### Download and Usage Flow
+
+#### Case 1: Happy Case
+The entire `package.important` block is available before boot timeout.
+
+![Case 1: Happy Case](readme-images/Case%201%20Happy%20Case.png)
+
+#### Case 2: Package Timeout
+If the `package.important` block is not completely downloaded on time, the entire package set is not used. The SDK will supply the previous package along with relevant configurations to its users.
+
+![Case 2: Package Timeout](readme-images/Case%202%20Package%20Timeout.png)
+
+#### Case 3: Resource Timeout
+If the resource block is not completely downloaded by the time of load, then all files downloaded before the timeout are used. Files downloaded after are not available in this session. This ensures that file read operations in one session are idempotent.
+
+![Case 3: Resource Timeout](readme-images/Case%203%20Resource%20Timeout.png)
+
+### Feature list
+*   Splits (Webpack - split) support for bundles
+*   Security via signature validation
+*   CLI for pushing releases
+*   React plugin to use sdk
+*   Juspay server / Self hosted
+*   Adoption Analytics
+
 ### Optional Add-on: The Airborne Server
 
 For developers who need a self-hosted backend solution to manage and distribute updates:
