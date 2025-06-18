@@ -21,6 +21,8 @@ import `in`.juspay.hyperota.constants.LogCategory
 import `in`.juspay.hyperota.constants.LogLevel
 import `in`.juspay.hyperota.constants.LogSubCategory
 import `in`.juspay.hyperota.network.OTANetUtils
+import `in`.juspay.hyperota.ota.Constants.APP_DIR
+import `in`.juspay.hyperota.ota.Constants.BACKUPS_DIR
 import `in`.juspay.hyperota.ota.Constants.CONFIG_FILE_NAME
 import `in`.juspay.hyperota.ota.Constants.DEFAULT_CONFIG
 import `in`.juspay.hyperota.ota.Constants.DEFAULT_RESOURCES
@@ -28,6 +30,7 @@ import `in`.juspay.hyperota.ota.Constants.PACKAGE_DIR_NAME
 import `in`.juspay.hyperota.ota.Constants.PACKAGE_MANIFEST_FILE_NAME
 import `in`.juspay.hyperota.ota.Constants.RC_VERSION_FILE_NAME
 import `in`.juspay.hyperota.ota.Constants.RESOURCES_FILE_NAME
+import `in`.juspay.hyperota.ota.UpdateTask.Companion
 import `in`.juspay.hyperota.services.OTAServices
 import `in`.juspay.hyperota.utils.OTAUtils
 import org.json.JSONArray
@@ -51,6 +54,7 @@ class ApplicationManager(
     private val workspace = otaServices.workspace
     private val tracker = otaServices.trackerCallback
     private var indexFolderPath = ""
+    private val packageBackupDir = "$BACKUPS_DIR/${PACKAGE_DIR_NAME}_backup"
 
     fun loadApplication(unSanitizedClientId: String, lazyDownloadCallback: LazyDownloadCallback? = null) {
         doAsync {
@@ -106,7 +110,7 @@ class ApplicationManager(
         val startTime = System.currentTimeMillis()
         val url = releaseConfigTemplateUrl
         val newTask =
-            UpdateTask(url, otaServices.fileProviderService, releaseConfig, fileLock, tracker, OTANetUtils(ctx, clientId, otaServices.cleanUpValue), rcHeaders, lazyDownloadCallback)
+            UpdateTask(this, url, otaServices.fileProviderService, releaseConfig, fileLock, tracker, OTANetUtils(ctx, clientId, otaServices.cleanUpValue), rcHeaders, lazyDownloadCallback)
         val runningTask = RUNNING_UPDATE_TASKS.putIfAbsent(clientId, newTask) ?: newTask
         if (runningTask == newTask) {
             Log.d(TAG, "No running update tasks for '$clientId', starting new task.")
@@ -367,6 +371,75 @@ class ApplicationManager(
         }
         return ""
     }
+
+    internal fun backupPackage(
+        restorePoint: String
+    ): Boolean {
+        otaServices.fileProviderService.updateFile("$packageBackupDir/$restorePoint/.keep", ByteArray(0))
+
+        otaServices.fileProviderService.listFilesRecursive(APP_DIR)?.forEach { name ->
+            val data = otaServices.fileProviderService.readFromFile("$APP_DIR/$name")
+            otaServices.fileProviderService.updateFile("$packageBackupDir/$restorePoint/$name", data.toByteArray())
+        }
+        Log.d(UpdateTask.TAG, "Created restore point at $restorePoint.")
+        return true
+    }
+
+    /**
+     * Creates a restore point with the given name.
+     * If the restore point name is `default`, it throws an `IllegalArgumentException`.
+     *
+     * @param restorePoint The name of the restore point to create.
+     * @throws IllegalArgumentException if the restore point name is `default`.
+     */
+    @Throws(IllegalArgumentException::class)
+    fun createRestorePoint(restorePoint: String) {
+        if (restorePoint == "default") {
+            throw IllegalArgumentException(
+                "Can't create restore point named `default` as it is a reserved restore point."
+            )
+        }
+        backupPackage(restorePoint)
+    }
+
+    /**
+     * Rolls back the package update to the specified restore point.
+     * If the restore point does not exist, it returns false.
+     *
+     * @param restorePoint The name of the restore point to roll back to.
+     * @return true if rollback was successful, false otherwise.
+     */
+    fun rollbackPackage(
+        restorePoint: String = "default"
+    ): Boolean {
+        Log.d(UpdateTask.TAG, "Rolling back package update to $restorePoint.")
+        cancelAllUpdateTasks()
+        trackInfo("rollback_initiated", JSONObject().put("restore_point", restorePoint))
+        val keepFile = otaServices.fileProviderService.getFileFromInternalStorage("$packageBackupDir/$restorePoint/.keep")
+        if (keepFile.exists()) {
+            otaServices.fileProviderService.listFiles("$packageBackupDir/$restorePoint")?.forEach { name ->
+                val data = otaServices.fileProviderService.readFromFile("$packageBackupDir/$restorePoint/$name")
+                otaServices.fileProviderService.updateFile("$APP_DIR/$name", data.toByteArray())
+            }
+            otaServices.fileProviderService.deleteFileFromInternalStorage("$packageBackupDir/$restorePoint/.keep")
+            Log.d(UpdateTask.TAG, "Rollback successful at $restorePoint.")
+            trackInfo("rollback_success", JSONObject().put("restore_point", restorePoint))
+            return true
+        } else {
+            Log.e(UpdateTask.TAG, "No backup found for rollback at restore point = $restorePoint.")
+            trackInfo("rollback_failed", JSONObject().put("restore_point", restorePoint))
+            return false
+        }
+    }
+
+    fun cancelAllUpdateTasks() {
+        val snapshot = RUNNING_UPDATE_TASKS.entries.toList()
+        snapshot.forEach { (clientId, task) ->
+            task.cancel()
+            RUNNING_UPDATE_TASKS.remove(clientId)
+        }
+    }
+
 
     companion object {
         const val TAG = "ApplicationManager"

@@ -18,6 +18,7 @@ import org.json.JSONObject
 
 internal object Constants {
     const val APP_DIR = "app"
+    const val BACKUPS_DIR = "backups"
     const val PACKAGE_DIR_NAME = "package"
     const val RESOURCES_DIR_NAME = "resources"
     const val RC_VERSION_FILE_NAME = "rc_version.txt"
