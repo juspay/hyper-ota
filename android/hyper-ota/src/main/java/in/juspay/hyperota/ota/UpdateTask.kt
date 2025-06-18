@@ -183,6 +183,10 @@ internal class UpdateTask(
         resourceUpdate = ResourceUpdateTask(localReleaseConfig?.resources, fetched.resources)
         resourceUpdate?.start()
         var updatedConfig: ReleaseConfig.Config? = null
+        trackInfo(
+            "update_checked",
+            JSONObject().put("new_rc_version", fetched.config.version)
+        )
         if (fetched.version != localReleaseConfig?.version) {
             if (writeRCVersion(fetched.version)) {
                 trackInfo(

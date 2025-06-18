@@ -26,6 +26,7 @@ buildscript {
         classpath 'com.android.tools.build:gradle:8.7.3'
         classpath 'com.diffplug.spotless:spotless-plugin-gradle:6.22.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jetbrains.kotlin:kotlin-serialization:$kotlin_version"
     }
 }
 
