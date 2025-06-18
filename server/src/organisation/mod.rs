@@ -268,8 +268,7 @@ fn parse_user_organizations(groups: Vec<String>) -> Vec<Organisation> {
                 organisation.applications.push(Application {
                     application: app_name,
                     organisation: organisation_name.clone(),
-                    access: vec![access],
-                    release_config: None,
+                    access: vec![access]
                 });
             }
         } else {

@@ -40,7 +40,6 @@ use diesel::QueryDsl;
 
 pub fn add_routes() -> Scope {
     Scope::new("")
-        .service(serve_release)
         .service(serve_release_v2)
 }
 
@@ -83,7 +82,7 @@ struct InnerPackage {
     version: i32,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 struct File {
     url: String,
     #[serde(rename = "filePath")]
@@ -96,7 +95,7 @@ struct Package {
     version: String,
     #[serde(flatten)]
     properties: serde_json::Value,
-    index: String,
+    index: File,
     important: Vec<File>,
     lazy: Vec<File>,
 }
@@ -189,178 +188,6 @@ fn decode_to_config_v2(value: Value) -> Result<PackageMeta> {
     };
 
     Ok(PackageMeta { config, package })
-}
-
-#[get("{organisation}/{application}")]
-async fn serve_release(
-    path: web::Path<(String, String)>,
-    state: web::Data<AppState>,
-) -> Result<Json<ReleaseConfig>> {
-    println!("serve_release : {:?}", path);
-    let (organisation, application) = path.into_inner();
-    // Check CAC to find which package to use.
-    // Read Package from the DB
-    // Read Other keys from CAC
-
-    let mut conn = state
-        .db_pool
-        .get()
-        .map_err(error::ErrorInternalServerError)?;
-
-    println!("conn : {:?}", "connection");
-
-    let superposition_org_id_from_env = state.env.superposition_org_id.clone();
-
-
-    let config = get_resolved_config(
-        &state.superposition_configuration,
-        &superposition_org_id_from_env,
-        &application,
-        None,
-        None,
-        None,
-        Some(superposition_rust_sdk::models::MergeStrategy::Merge),
-        Some(json!({})), // TODO: Add Find out how to add custom dimesions
-    )
-    .await
-    .map_err(|e| error::ErrorInternalServerError(format!("Failed to get config: {}", e)))?;
-
-    println!("config : {:?}", config);
-
-    let packages_meta = decode_to_config(config)?;
-    // TODO: Change CAC type to have package version
-    // Add properties based on package settings.
-    // TODO : Find out resource structure
-    println!("packages_meta : {:?}", packages_meta);
-
-    let package_data = packages
-        .filter(
-            org_id
-                .eq(&organisation)
-                .and(app_id.eq(&application))
-                .and(version.eq(packages_meta.package.version)),
-        )
-        .first::<PackageEntryRead>(&mut conn)
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => {
-                println!(
-                    "No package found for org: {}, app: {}, version: {}",
-                    organisation, application, packages_meta.package.version
-                );
-                error::ErrorNotFound(format!(
-                    "No package found for version {} of application {}",
-                    packages_meta.package.version, application
-                ))
-            }
-            _ => {
-                println!("Database error while fetching package: {:?}", e);
-                error::ErrorInternalServerError(e)
-            }
-        })?;
-
-    println!("package_data : {:?}", package_data);
-
-    // Convert important and lazy files from JSON back to Vec<File>
-    let important_files: Vec<crate::utils::db::models::File> = 
-        serde_json::from_value(package_data.important.clone()).unwrap_or_default();
-    let lazy_files: Vec<crate::utils::db::models::File> = 
-        serde_json::from_value(package_data.lazy.clone()).unwrap_or_default();
-    
-    // If not using URLs, construct full URLs for the files
-    let final_important_files = if !package_data.use_urls {
-        important_files.iter().map(|file| {
-            crate::utils::db::models::File {
-                url: if package_data.version_splits {
-                    format!(
-                        "{}/assets/{}/{}/{}/{}",
-                        &state.env.public_url,
-                        &package_data.org_id,
-                        &package_data.app_id,
-                        package_data.version,
-                        file.file_path
-                    )
-                } else {
-                    format!(
-                        "{}/assets/{}/{}/{}",
-                        &state.env.public_url,
-                        &package_data.org_id,
-                        &package_data.app_id,
-                        file.file_path
-                    )
-                },
-                file_path: file.file_path.clone(),
-            }
-        }).collect()
-    } else {
-        important_files
-    };
-
-    let final_lazy_files = if !package_data.use_urls {
-        lazy_files.iter().map(|file| {
-            crate::utils::db::models::File {
-                url: if package_data.version_splits {
-                    format!(
-                        "{}/assets/{}/{}/{}/{}",
-                        &state.env.public_url,
-                        &package_data.org_id,
-                        &package_data.app_id,
-                        package_data.version,
-                        file.file_path
-                    )
-                } else {
-                    format!(
-                        "{}/assets/{}/{}/{}",
-                        &state.env.public_url,
-                        &package_data.org_id,
-                        &package_data.app_id,
-                        file.file_path
-                    )
-                },
-                file_path: file.file_path.clone(),
-            }
-        }).collect()
-    } else {
-        lazy_files
-    };
-
-    let package_index = if !package_data.use_urls {
-        format!(
-                "{}/assets/{}/{}/{}/{}",
-                &state.env.public_url,
-                &package_data.org_id,
-                &package_data.app_id,
-                package_data.version,
-                package_data.index
-            )
-    } else {
-        package_data.index.clone()
-    };
-
-    Ok(Json(ReleaseConfig {
-        config: Config {
-            version: packages_meta.config.version,
-            release_config_timeout: packages_meta.config.release_config_timeout as u32,
-            package_timeout: packages_meta.config.package_timeout as u32,
-            properties: ConfigProperties {
-                tenant_info: packages_meta.config.properties,
-            },
-        },
-        package: Package {
-            name: package_data.app_id,
-            version: packages_meta.package.version.to_string(),
-            properties: package_data.properties.clone(),
-            index: package_index,
-            important: final_important_files.iter().map(|f| File {
-                url: f.url.clone(),
-                file_path: f.file_path.clone(),
-            }).collect(),
-            lazy: final_lazy_files.iter().map(|f| File {
-                url: f.url.clone(),
-                file_path: f.file_path.clone(),
-            }).collect(),
-        },
-        resources: package_data.resources,
-    }))
 }
 
 
@@ -470,6 +297,8 @@ async fn serve_release_v2(
         serde_json::from_value(package_data.important.clone()).unwrap_or_default();
     let lazy_files: Vec<File> = 
         serde_json::from_value(package_data.lazy.clone()).unwrap_or_default();
+    let index_file: File = 
+        serde_json::from_value(package_data.index.clone()).unwrap_or_default();
 
     Ok(Json(ReleaseConfig {
         config: Config {
@@ -484,7 +313,7 @@ async fn serve_release_v2(
             name: package_data.app_id,
             version: config_data.version.to_string(),
             properties: config_data.properties.clone(),
-            index: package_data.index,
+            index: index_file,
             important: important_files,
             lazy: lazy_files,
         },
