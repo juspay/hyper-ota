@@ -1,6 +1,7 @@
 package `in`.juspay.airborne
 
 import android.content.Context
+import androidx.annotation.Keep
 import `in`.juspay.airborne.constants.APIConstants
 import `in`.juspay.airborne.services.AirborneAnalytics
 import `in`.juspay.hyperota.HyperOTAServices
@@ -22,6 +23,7 @@ import org.json.JSONObject
 * @param lazyDownloadCallback Callback for lazy download events.
 * @param trackerCallback Callback for tracking events.
 */
+@Keep
 class Airborne(
     private val context: Context,
     tenantId: String,
@@ -125,6 +127,7 @@ class Airborne(
      * @param headers Optional headers to be used in the request.
      * @return An instance of [ApplicationManager].
      */
+    @Keep
     fun createApplicationManager(
         headers: Map<String, String>? = null,
     ): ApplicationManager {

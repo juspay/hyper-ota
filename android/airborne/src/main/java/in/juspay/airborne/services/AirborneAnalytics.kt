@@ -178,8 +178,33 @@ internal class AirborneAnalytics(
         }
     }
 
+    object DeviceUuid {
+        private const val PREFS_NAME    = "airborne_prefs"
+        private const val KEY_DEVICE_ID = "airborne_device_uuid"
+        @Volatile private var uuid: String? = null
+
+        fun get(context: Context): String {
+            uuid?.let { return it }
+
+            synchronized(this) {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                var id = prefs.getString(KEY_DEVICE_ID, null)
+
+                if (id.isNullOrEmpty()) {
+                    id = UUID.randomUUID().toString()
+                    prefs.edit()
+                        .putString(KEY_DEVICE_ID, id)
+                        .apply()
+                }
+
+                uuid = id
+                return id
+            }
+        }
+    }
+
     private fun getDeviceId(): String =
-        Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        DeviceUuid.get(context)
 
     private fun getOsVersion(): String =
         Build.VERSION.RELEASE.takeIf { it.isNotBlank() } ?: "Unknown"
