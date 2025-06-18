@@ -60,31 +60,7 @@ pub fn add_routes() -> Scope {
 pub struct Application {
     pub application: String,
     pub organisation: String,
-    pub access: Vec<String>,
-    pub release_config: Option<ReleaseConfig>, // TODO Add information on the application
-                                               // Latest live package
-                                               // Latest live resources
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ReleaseConfig {
-    pub config: ConfigBlock,
-    pub package: PackageBlock,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ConfigBlock {
-    release_config_timeout: u32,
-    package_timeout: u32,
-    version: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct PackageBlock {
-    name: String,
-    version: String,
-    index: String,
-    splits: Vec<String>,
+    pub access: Vec<String>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -515,8 +491,7 @@ async fn add_application(
         actix_web::Result::Ok(Json(Application {
             application,
             organisation,
-            access: roles.iter().map(|&s| s.to_string()).collect(),
-            release_config: None,
+            access: roles.iter().map(|&s| s.to_string()).collect()
         }))
     }
 }

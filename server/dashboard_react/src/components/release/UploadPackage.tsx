@@ -155,7 +155,10 @@ export default function UploadPackage({
   "package": {
    "name": "Application_Name",
    "version": "1.0.0",
-   "index": "https://assets.juspay.in/bundles/index.js",
+   "index": { 
+     "url": "https://assets.juspay.in/bundles/index.js",
+     "filePath": "index.js"
+   },
    "properties": {},
    "important": [
      {
@@ -354,7 +357,10 @@ export default function UploadPackage({
   "package": {
    "name": "Application_Name",
    "version": "1.0.0",
-   "index": "https://assets.juspay.in/bundles/index.js",
+   "index": { 
+     "url": "https://assets.juspay.in/bundles/index.js",
+     "filePath": "index.js"
+   },
    "properties": {},
    "important": [
      {
