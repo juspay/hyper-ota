@@ -26,6 +26,7 @@ import `in`.juspay.hyperota.constants.LogSubCategory
 import `in`.juspay.hyperota.network.NetUtils
 import `in`.juspay.hyperota.ota.ApplicationManager.StateKey
 import `in`.juspay.hyperota.ota.Constants.APP_DIR
+import `in`.juspay.hyperota.ota.Constants.BACKUPS_DIR
 import `in`.juspay.hyperota.ota.Constants.CONFIG_FILE_NAME
 import `in`.juspay.hyperota.ota.Constants.DEFAULT_CONFIG
 import `in`.juspay.hyperota.ota.Constants.DEFAULT_RESOURCES
@@ -67,6 +68,7 @@ internal typealias OnFinishCallback = (UpdateResult, JSONObject) -> Unit
 private typealias FetchResult = UpdateTask.Result<Pair<Response, ResponseBody>>
 
 internal class UpdateTask(
+    private val applicationManager: ApplicationManager,
     private val releaseConfigUrl: String,
     private val fileProviderService: FileProviderService,
     private var localReleaseConfig: ReleaseConfig?,
@@ -112,6 +114,9 @@ internal class UpdateTask(
     // TODO Move to storing in main app dir & remove this var.
     private var resourceSaveFuture: Future<Unit>? = null
 
+    private val packageBackupDir = "$BACKUPS_DIR/${PACKAGE_DIR_NAME}_backup"
+    private var isCancelled = false
+
     init {
         tracker.let { trackers.add(it) }
         val sortedHeaders = (rcHeaders ?: emptyMap()).toSortedMap()
@@ -145,6 +150,13 @@ internal class UpdateTask(
             onComplete(Stage.INITIALIZING)
             doAsync { runInternal() }
         }
+    }
+
+    fun cancel() {
+        isCancelled = true
+        packageUpdate?.cancel(true)
+        resourceUpdate?.futures?.forEach { it.cancel(true) }
+        Log.d(TAG, "UpdateTask cancelled.")
     }
 
     private fun setCurrentResult(
@@ -362,6 +374,7 @@ internal class UpdateTask(
                 try {
                     val releaseConfig = ReleaseConfig.deSerialize(serialized).getOrThrow()
                     trackReleaseConfigFetchResult(fr, startTime)
+                    checkAndCreateDefaultRestorePoint()
                     releaseConfig
                 } catch (e: Exception) {
                     Log.e(
@@ -624,6 +637,10 @@ internal class UpdateTask(
                 Log.d(TAG, "Starting lazy split downloads.")
                 val downloads = splits.map {
                     doAsync {
+                        if(isCancelled){
+                            Log.d(TAG, "Cancelled, skipping download for ${it.filePath}")
+                            return@doAsync Result.Ok(Unit)
+                        }
                         val result = if (it.isDownloaded == true) {
                             Result.Ok(Unit)
                         } else {
@@ -727,6 +744,13 @@ internal class UpdateTask(
         val state = loadPersistentState()
         state.remove(key.name)
         savePersistentState(state)
+    }
+
+    // ------ ROLLBACK -----
+    private fun checkAndCreateDefaultRestorePoint() {
+        if (!fileProviderService.getFileFromInternalStorage("$packageBackupDir/default/.keep").exists()) {
+            applicationManager.backupPackage("default")
+        }
     }
 
     // ----- NETWORK-UTILS -----
