@@ -141,9 +141,7 @@ impl TransactionManager {
 
         // Superposition cleanup
         if let Some(sp_id) = &tx_state.superposition_resource_id {
-            if let Err(e) =
-                cleanup_superposition_resource(app_state, sp_id, &tx_state.entity_type).await
-            {
+            if let Err(e) = cleanup_superposition_resource(sp_id, &tx_state.entity_type).await {
                 warn!("Failed to clean up Superposition resource: {}", e);
                 // Record the failed cleanup for later reconciliation
                 if let Err(e) = record_failed_cleanup(app_state, &tx_state).await {
@@ -158,7 +156,6 @@ impl TransactionManager {
 
 /// Clean up a Superposition resource
 async fn cleanup_superposition_resource(
-    app_state: &web::Data<AppState>,
     resource_id: &str,
     resource_type: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -230,7 +227,6 @@ pub async fn process_cleanup_outbox(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use crate::utils::db::schema::hyperotaserver::cleanup_outbox::dsl::*;
     use chrono::Utc;
-    use diesel::dsl::now;
     use diesel::prelude::*;
 
     // Constants for cleanup job configuration
@@ -436,9 +432,7 @@ async fn process_organization_cleanup(
     if need_superposition_cleanup {
         if let Some(sp_id) = &tx_state.superposition_resource_id {
             debug!("Cleaning up Superposition resource: {}", sp_id);
-            if let Err(e) =
-                cleanup_superposition_resource(app_state, sp_id, &tx_state.entity_type).await
-            {
+            if let Err(e) = cleanup_superposition_resource(sp_id, &tx_state.entity_type).await {
                 warn!("Failed to clean up Superposition resource: {}", e);
                 // Return error to trigger retry
                 return Err(format!("Failed to clean up Superposition resource: {}", e).into());

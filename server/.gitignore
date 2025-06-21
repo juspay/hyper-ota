@@ -2,6 +2,7 @@
 /**/node_modules
 /**/.spago
 .DS_Store
+/**/.DS_Store
 .env
 .vscode
 localstack-data/

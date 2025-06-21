@@ -67,9 +67,9 @@ pub async fn establish_pool(kms_client: &Client) -> DbPool {
     }
 }
 
-
 pub async fn establish_connection(kms_client: &Client) -> PgConnection {
     // Have a different user with higher access for DB migrations
-    let database_url = get_database_url("DB_MIGRATION_USER","DB_MIGRATION_PASSWORD",kms_client).await;
+    let database_url =
+        get_database_url("DB_MIGRATION_USER", "DB_MIGRATION_PASSWORD", kms_client).await;
     PgConnection::establish(&database_url).expect("Failed to connect to database")
 }

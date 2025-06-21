@@ -18,3 +18,4 @@ pub mod kms;
 pub mod s3;
 pub mod transaction_manager;
 pub mod workspace;
+pub mod document;

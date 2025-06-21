@@ -144,7 +144,11 @@ where
             match token {
                 Ok(token) => match auth {
                     Some(auth) => {
-                        let token_data = decode_jwt_token(auth, &env.keycloak_public_key.clone(), &env.client_id.clone());
+                        let token_data = decode_jwt_token(
+                            auth,
+                            &env.keycloak_public_key.clone(),
+                            &env.client_id.clone(),
+                        );
                         match token_data {
                             Ok(token_data) => {
                                 let mut organisation = None;
@@ -227,28 +231,6 @@ where
 }
 
 impl AccessLevel {
-    pub fn from_str(access: &str) -> Option<Self> {
-        match access.to_lowercase().as_str() {
-            "read" => Some(AccessLevel {
-                name: "read".to_string(),
-                level: READ.access,
-            }),
-            "write" => Some(AccessLevel {
-                name: "write".to_string(),
-                level: WRITE.access,
-            }),
-            "admin" => Some(AccessLevel {
-                name: "admin".to_string(),
-                level: ADMIN.access,
-            }),
-            "owner" => Some(AccessLevel {
-                name: "owner".to_string(),
-                level: OWNER.access,
-            }),
-            _ => None,
-        }
-    }
-
     pub fn is_admin_or_higher(&self) -> bool {
         self.level >= ADMIN.access
     }
@@ -268,13 +250,4 @@ pub async fn validate_required_access(
     } else {
         Err("No organization access".to_string())
     }
-}
-
-pub fn get_access_levels() -> [(String, u8); 4] {
-    [
-        ("read".to_string(), READ.access),
-        ("write".to_string(), WRITE.access),
-        ("admin".to_string(), ADMIN.access),
-        ("owner".to_string(), OWNER.access),
-    ]
 }

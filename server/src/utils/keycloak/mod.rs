@@ -2,11 +2,7 @@ use crate::{
     middleware::auth::AuthResponse,
     types::{AppState, Environment},
 };
-use actix_web::{
-    error,
-    web::{self, Json, ReqData},
-    HttpMessage, HttpRequest, Scope,
-};
+use actix_web::{error, web, HttpMessage, HttpRequest};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, TokenData, Validation};
 use keycloak::{
     self,
@@ -18,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Claims {
-    pub sub: String,                // User ID
+    pub sub: String,                        // User ID
     pub preferred_username: Option<String>, // Name
     pub email: Option<String>,
     pub realm_access: Option<Roles>,
@@ -156,12 +152,4 @@ pub async fn find_role_subgroup(
     }
 
     Ok(None)
-}
-
-// Function to check if public key format is valid
-pub fn validate_public_key(public_key: &str) -> bool {
-    match DecodingKey::from_rsa_pem(public_key.as_bytes()) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
 }
