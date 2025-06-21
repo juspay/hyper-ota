@@ -30,7 +30,7 @@ use aws_sdk_s3::config::Builder;
 use dotenvy::dotenv;
 use middleware::auth::Auth;
 use reqwest::Client;
-use superposition_rust_sdk::apis::configuration::Configuration;
+use superposition_rust_sdk::config::Config as SrsConfig;
 use utils::{db, kms::decrypt_kms, transaction_manager::start_cleanup_job};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
@@ -47,9 +47,14 @@ async fn main() -> std::io::Result<()> {
     let realm = std::env::var("KEYCLOAK_REALM").expect("KEYCLOAK_REALM must be set");
     let publickey = std::env::var("KEYCLOAK_PUBLIC_KEY").expect("KEYCLOAK_PUBLIC_KEY must be set");
     let cac_url = std::env::var("SUPERPOSITION_URL").expect("SUPERPOSITION_URL must be set");
-    let superposition_org_id_env = std::env::var("SUPERPOSITION_ORG_ID").expect("SUPERPOSITION_ORG_ID must be set");
+    let superposition_org_id_env =
+        std::env::var("SUPERPOSITION_ORG_ID").expect("SUPERPOSITION_ORG_ID must be set");
     let bucket_name = std::env::var("AWS_BUCKET").expect("AWS_BUCKET must be set");
     let public_url = std::env::var("PUBLIC_ENDPOINT").expect("PUBLIC_ENDPOINT must be set");
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "9000".to_string())
+        .parse()
+        .expect("PORT must be a valid number");
 
     //Need to check if this ENV exists on pod
     let uses_local_stack = std::env::var("AWS_ENDPOINT_URL");
@@ -93,15 +98,19 @@ async fn main() -> std::io::Result<()> {
     let aws_s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
     // Create a shared state for the application
+    let superposition_client = superposition_rust_sdk::Client::from_conf(
+        SrsConfig::builder()
+            .endpoint_url(cac_url.clone())
+            .behavior_version_latest()
+            .bearer_token("your_bearer_token_here".into())
+            .build(),
+    );
+
     let app_state = Arc::new(types::AppState {
         env: env.clone(),
         db_pool: pool,
-        superposition_configuration: Configuration {
-            base_path: cac_url.clone(),
-            client: Client::new(),
-            ..Default::default()
-        },
         s3_client: aws_s3_client,
+        superposition_client,
     });
 
     // Start the background cleanup job for transaction reconciliation
@@ -141,7 +150,7 @@ async fn main() -> std::io::Result<()> {
                 // Decide if this needs auth; Ideally this only needs signature verfication
             )
     })
-    .bind(("0.0.0.0", 9000))? // Listen on all interfaces
+    .bind(("0.0.0.0", port))? // Listen on all interfaces
     .run()
     .await
 }

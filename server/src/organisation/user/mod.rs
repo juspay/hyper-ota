@@ -26,7 +26,7 @@ use thiserror::Error;
 
 use crate::{
     middleware::auth::{
-        validate_required_access, validate_user, Access, AuthResponse, ADMIN, OWNER, READ, WRITE,
+        validate_required_access, validate_user, Access, AuthResponse, ADMIN, READ, WRITE,
     },
     types::AppState,
     utils::keycloak::{find_org_group, find_user_by_username, prepare_user_action},
@@ -287,16 +287,7 @@ async fn organisation_add_user(
     );
 
     // Use transaction function to add user
-    add_user_with_transaction(
-        &admin,
-        &realm,
-        &org_context,
-        &target_user,
-        &role_name,
-        role_level,
-        &state,
-    )
-    .await?;
+    add_user_with_transaction(&admin, &realm, &org_context, &target_user, &role_name).await?;
 
     info!(
         "Successfully added user {} to org {} with access level {}",
@@ -328,7 +319,7 @@ async fn organisation_update_user(
         .map_err(|e| OrgError::Internal(e.to_string()))?;
 
     // Validate the requested access level
-    let (role_name, access_level) = validate_access_level(&request.access)?;
+    let (role_name, _access_level) = validate_access_level(&request.access)?;
 
     // Find target user and organization
     let target_user = find_target_user(&admin, &realm, &request.user).await?;
@@ -365,7 +356,6 @@ async fn organisation_update_user(
         &org_context,
         &target_user,
         &role_name,
-        access_level,
         &current_role,
         &state,
     )

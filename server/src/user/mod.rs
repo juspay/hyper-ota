@@ -197,9 +197,13 @@ async fn login_implementation(
             .json()
             .await
             .map_err(error::ErrorInternalServerError)?;
-
-        let token_data = decode_jwt_token(&token.access_token, &state.env.keycloak_public_key, &state.env.client_id)
-            .map_err(|_| error::ErrorUnauthorized("Token has expired or is invalid"))?;
+        println!("[LOGIN] Token successful for user: {:?}", token);
+        let token_data = decode_jwt_token(
+            &token.access_token,
+            &state.env.keycloak_public_key,
+            &state.env.client_id,
+        )
+        .map_err(|_| error::ErrorUnauthorized("Token has expired or is invalid"))?;
 
         let admin_token = get_token(state.env.clone(), client)
             .await
@@ -254,7 +258,10 @@ async fn get_user_impl(
     authresponse: AuthResponse,
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
-    println!("[GET_USER] Fetching user details for ID: {}", authresponse.sub);
+    println!(
+        "[GET_USER] Fetching user details for ID: {}",
+        authresponse.sub
+    );
 
     // Get list of organisations and application in orginisation for each user
     let user_id: String = authresponse.sub;
@@ -283,8 +290,12 @@ async fn get_user_impl(
 }
 
 fn parse_groups(user_id: String, groups: Vec<String>) -> User {
-    println!("[PARSE_GROUPS] Parsing {} groups for user: {}", groups.len(), user_id);
-    
+    println!(
+        "[PARSE_GROUPS] Parsing {} groups for user: {}",
+        groups.len(),
+        user_id
+    );
+
     let mut organisations: HashMap<String, Organisation> = HashMap::new();
 
     for group in groups.iter() {
@@ -342,7 +353,10 @@ fn parse_groups(user_id: String, groups: Vec<String>) -> User {
         }
     }
 
-    println!("[PARSE_GROUPS] Finished parsing. Found {} organisations", organisations.len());
+    println!(
+        "[PARSE_GROUPS] Finished parsing. Found {} organisations",
+        organisations.len()
+    );
     User {
         user_id,
         organisations: organisations.into_values().collect(),
@@ -379,14 +393,8 @@ fn get_base_url_from_request(req: &HttpRequest) -> String {
         .headers()
         .get("x-forwarded-host")
         .and_then(|h| h.to_str().ok())
-        .or_else(|| {
-            req.headers()
-                .get("host")
-                .and_then(|h| h.to_str().ok())
-        })
+        .or_else(|| req.headers().get("host").and_then(|h| h.to_str().ok()))
         .unwrap_or("localhost:9000"); // fallback
-    
-
 
     // Check if we're behind a proxy with HTTPS
     let scheme = if req
@@ -405,18 +413,7 @@ fn get_base_url_from_request(req: &HttpRequest) -> String {
         }
     };
 
-
     format!("{}://{}", scheme, host)
-}
-
-
-fn get_external_keycloak_url(internal_url: &str) -> String {
-    // Convert internal Docker network URLs to external URLs
-    if internal_url.contains("keycloak:8080") {
-        internal_url.replace("keycloak:8080", "localhost:8180")
-    } else {
-        internal_url.to_string()
-    }
 }
 
 #[get("oauth/url")]
@@ -428,12 +425,12 @@ async fn get_oauth_url(
     let keycloak_url = &state.env.keycloak_external_url;
     let realm = &state.env.realm;
     let client_id = &state.env.client_id;
-    
+
     let base_url = get_base_url_from_request(&req);
     let redirect_uri = format!("{}/dashboard/login", base_url);
 
     let oauth_state = "oauth_login_state".to_string();
-    
+
     let auth_url = format!(
         "{}/realms/{}/protocol/openid-connect/auth?client_id={}&response_type=code&scope=openid&redirect_uri={}&kc_idp_hint=google&state={}",
         keycloak_url,
@@ -442,11 +439,11 @@ async fn get_oauth_url(
         urlencoding::encode(&redirect_uri),
         oauth_state
     );
-    
+
     println!("[OAUTH_URL] Generated OAuth URL: {}", auth_url);
     println!("[OAUTH_URL] Base URL from request: {}", base_url);
     println!("[OAUTH_URL] Redirect URI: {}", redirect_uri);
-    
+
     Ok(Json(json!({
         "auth_url": auth_url,
         "state": oauth_state
@@ -461,14 +458,14 @@ async fn exchange_code_for_token(
     // Use internal URL for backend-to-backend communication
     let url = format!(
         "{}/realms/{}/protocol/openid-connect/token",
-        state.env.keycloak_url,  // Use internal URL for token exchange
+        state.env.keycloak_url, // Use internal URL for token exchange
         state.env.realm
     );
-    
+
     // Get redirect URI from request
     let base_url = get_base_url_from_request(req);
     let redirect_uri = format!("{}/dashboard/login", base_url);
-    
+
     let params = [
         ("client_id", state.env.client_id.clone()),
         ("client_secret", state.env.secret.clone()),
@@ -480,7 +477,7 @@ async fn exchange_code_for_token(
     println!("[EXCHANGE_CODE] Exchanging code for token");
     println!("[EXCHANGE_CODE] URL: {}", url);
     println!("[EXCHANGE_CODE] Redirect URI: {}", redirect_uri);
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post(&url)
@@ -501,7 +498,10 @@ async fn exchange_code_for_token(
     } else {
         let error_text = response.text().await.unwrap_or_default();
         println!("[EXCHANGE_CODE] Token exchange failed: {}", error_text);
-        Err(error::ErrorUnauthorized(format!("Token exchange failed: {}", error_text)))
+        Err(error::ErrorUnauthorized(format!(
+            "Token exchange failed: {}",
+            error_text
+        )))
     }
 }
 
@@ -512,9 +512,9 @@ async fn oauth_login(
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
     println!("[OAUTH_LOGIN] Processing OAuth login with code");
-    
+
     let oauth_req = json_req.into_inner();
-    
+
     let token_response = match exchange_code_for_token(&oauth_req.code, &req, &state).await {
         Ok(response) => response,
         Err(e) => {
@@ -525,10 +525,11 @@ async fn oauth_login(
 
     // Decode the access token to get user info
     let token_data = decode_jwt_token(
-        &token_response.access_token, 
-        &state.env.keycloak_public_key, 
-        &state.env.client_id
-    ).map_err(|e| {
+        &token_response.access_token,
+        &state.env.keycloak_public_key,
+        &state.env.client_id,
+    )
+    .map_err(|e| {
         println!("[OAUTH_LOGIN] Token decode failed: {:?}", e);
         error::ErrorUnauthorized("Invalid token")
     })?;
@@ -538,7 +539,7 @@ async fn oauth_login(
     let admin_token = get_token(state.env.clone(), client)
         .await
         .map_err(error::ErrorInternalServerError)?;
-    
+
     let mut user_resp = get_user_impl(
         AuthResponse {
             sub: token_data.claims.sub.clone(),
@@ -547,7 +548,8 @@ async fn oauth_login(
             application: None,
         },
         state,
-    ).await?;
+    )
+    .await?;
 
     user_resp.user_token = Some(UserToken {
         access_token: token_response.access_token,
@@ -556,7 +558,7 @@ async fn oauth_login(
         refresh_token: token_response.refresh_token.unwrap_or_default(),
         refresh_expires_in: token_response.refresh_expires_in.unwrap_or(0),
     });
-    
+
     Ok(user_resp)
 }
 
@@ -573,28 +575,31 @@ async fn oauth_signup(
     state: web::Data<AppState>,
 ) -> actix_web::Result<Json<User>> {
     println!("[OAUTH_SIGNUP] Processing OAuth signup with code");
-    
+
     let oauth_req = json_req.into_inner();
-    let base_url = get_base_url_from_request(&req);
-    
+
     // Exchange authorization code for tokens (same as login)
     let token_response = exchange_code_for_token(&oauth_req.code, &req, &state).await?;
-    
+
     // Decode the access token to get user info
     let token_data = decode_jwt_token(
-        &token_response.access_token, 
-        &state.env.keycloak_public_key, 
-        &state.env.client_id
-    ).map_err(|_| error::ErrorUnauthorized("Invalid token"))?;
-    
-    println!("[OAUTH_SIGNUP] Successfully authenticated user via Google OAuth: {}", token_data.claims.sub);
-    
+        &token_response.access_token,
+        &state.env.keycloak_public_key,
+        &state.env.client_id,
+    )
+    .map_err(|_| error::ErrorUnauthorized("Invalid token"))?;
+
+    println!(
+        "[OAUTH_SIGNUP] Successfully authenticated user via Google OAuth: {}",
+        token_data.claims.sub
+    );
+
     // Get admin token for user operations
     let client = reqwest::Client::new();
     let admin_token = get_token(state.env.clone(), client)
         .await
         .map_err(error::ErrorInternalServerError)?;
-    
+
     // For signup, we process it the same way as login since Keycloak handles user creation
     // The user account is automatically created in Keycloak when they sign in with Google
     let mut user_resp = get_user_impl(
@@ -605,8 +610,9 @@ async fn oauth_signup(
             application: None,
         },
         state,
-    ).await?;
-    
+    )
+    .await?;
+
     user_resp.user_token = Some(UserToken {
         access_token: token_response.access_token,
         token_type: token_response.token_type,
@@ -614,9 +620,10 @@ async fn oauth_signup(
         refresh_token: token_response.refresh_token.unwrap_or_default(),
         refresh_expires_in: token_response.refresh_expires_in.unwrap_or(0),
     });
-    
-    println!("[OAUTH_SIGNUP] OAuth signup completed successfully for user: {}", user_resp.user_id);
+
+    println!(
+        "[OAUTH_SIGNUP] OAuth signup completed successfully for user: {}",
+        user_resp.user_id
+    );
     Ok(user_resp)
 }
-
-

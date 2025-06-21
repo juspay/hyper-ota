@@ -1,14 +1,11 @@
 use chrono::{DateTime, Utc};
 use diesel::deserialize::Queryable;
-use diesel::pg::Pg;
 use diesel::prelude::*;
-use diesel::sql_types::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::db::schema::hyperotaserver::{
-    cleanup_outbox, configs, packages, releases, workspace_names
+    cleanup_outbox, configs, packages, releases, workspace_names,
 };
-
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct File {

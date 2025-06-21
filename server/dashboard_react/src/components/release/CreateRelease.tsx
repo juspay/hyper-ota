@@ -112,16 +112,19 @@ export default function CreateRelease({
       };
 
       // Transform dimension contexts into JsonLogic format
+      // console.log('Dimension contexts:', dimensionContexts);
+      // const contextLogic = dimensionContexts.reduce((acc, context) => {return acc[context.dimension] = context.value}, {});
       const contextLogic = dimensionContexts.length > 0
-        ? {
-            "and": dimensionContexts.map(ctx => ({
-              "==": [
-                { "var": ctx.dimension },
-                ctx.value
-              ]
-            }))
-          }
-        : true; // if no contexts, the rule should always match
+      ? {
+          "and": dimensionContexts.map(ctx => ({
+            "==": [
+              { "var": ctx.dimension },
+              ctx.value
+            ]
+          }))
+        }
+      : {}; // if no contexts, the rule should always match
+
 
       // Prepare release data
       const releaseData = {

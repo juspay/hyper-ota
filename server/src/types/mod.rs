@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use superposition_rust_sdk::apis::configuration::Configuration;
+use superposition_rust_sdk::Client;
 
 use crate::utils::db;
 
@@ -21,7 +21,7 @@ pub struct AppState {
     pub env: Environment,
     pub db_pool: db::DbPool,
     pub s3_client: aws_sdk_s3::Client,
-    pub superposition_configuration: Configuration,
+    pub superposition_client: Client,
 }
 
 #[derive(Clone, Debug)]

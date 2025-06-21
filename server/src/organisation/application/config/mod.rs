@@ -28,8 +28,7 @@ use crate::{
     middleware::auth::{validate_user, AuthResponse, WRITE},
     types::AppState,
     utils::db::{
-        models::ConfigEntry,
-        schema::hyperotaserver::configs::dsl::configs as configs_table,
+        models::ConfigEntry, schema::hyperotaserver::configs::dsl::configs as configs_table,
     },
 };
 

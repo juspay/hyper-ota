@@ -21,7 +21,7 @@ serde_json = "1"
 futures = "0.3"
 diesel = { version = "2.2", features = ["postgres", "r2d2", "uuid", "serde_json", "chrono"] }
 dotenvy = "0.15"
-superposition-rust-sdk = { git = "https://github.com/anuragdvd/superposition-rust-sdk", package = "superposition-rust-sdk" , rev="166b01c291ef01ba585b156c8751afbd3a4e5586" }
+superposition-rust-sdk = { git = "https://github.com/juspay/superposition", subdir = "clients/generated/smithy/rust"}
 reqwest = { version = "^0.12.5"}
 jsonwebtoken = "9.3.1"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
@@ -39,6 +39,8 @@ chrono = "0.4.41"
 tracing = "0.1.41"
 diesel_migrations = "2.2"
 rand = "0.8"
+aws-smithy-types = "1.2.5"
+
 
 [dev-dependencies]
 mockall = "0.11.4"

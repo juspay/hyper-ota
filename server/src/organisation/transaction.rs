@@ -12,21 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use actix_web::{error, web, HttpResponse};
-use diesel::RunQueryDsl;
+use actix_web::{error, web};
 use keycloak::{types::GroupRepresentation, KeycloakAdmin};
 use log::{debug, error, info, warn};
-use serde_json::json;
-use superposition_rust_sdk::{
-    apis::default_api::creater_organisation, models::CreaterOrganisationRequestContent,
-};
 
 use crate::{
-    middleware::auth::ROLES,
-    types::AppState,
-    utils::{
-        transaction_manager::{record_failed_cleanup, TransactionManager},
-    },
+    middleware::auth::ROLES, types::AppState, utils::transaction_manager::TransactionManager,
 };
 
 use super::Organisation;
@@ -126,28 +117,11 @@ pub async fn create_organisation_with_transaction(
         }
     }
 
-    // Step 3: Prepare database connection
-    let mut conn = match state.db_pool.get() {
-        Ok(conn) => conn,
-        Err(e) => {
-            // If database connection fails, handle rollback
-            if let Err(rollback_err) = transaction
-                .handle_rollback_if_needed(admin, realm, state)
-                .await
-            {
-                error!("Rollback failed: {}", rollback_err);
-            }
-
-            return Err(error::ErrorInternalServerError(format!(
-                "Database connection error: {}",
-                e
-            )));
-        }
-    };
-
     transaction.set_database_inserted();
-    debug!("Organization {} uses pre-configured Superposition organization ID from environment.", organisation);
-
+    debug!(
+        "Organization {} uses pre-configured Superposition organization ID from environment.",
+        organisation
+    );
 
     // Transaction is complete for Keycloak group creation
     info!(
@@ -167,7 +141,7 @@ pub async fn delete_organisation_with_transaction(
     organisation: &str,
     admin: &KeycloakAdmin,
     realm: &str,
-    user_id: &str,
+    // user_id: &str,
     state: &web::Data<AppState>,
 ) -> actix_web::Result<()> {
     // Create a transaction manager for this operation
@@ -179,7 +153,6 @@ pub async fn delete_organisation_with_transaction(
     );
 
     debug!("Organization {} uses pre-configured Superposition organization ID from environment. This delete operation will focus on Keycloak resources.", organisation);
-
 
     // Find and track all groups to delete
     // First, get the organization parent group
@@ -228,10 +201,12 @@ pub async fn delete_organisation_with_transaction(
     // Track the parent group for potential rollback (in case we need to restore)
     transaction.add_keycloak_group(&parent_group_id);
 
-    debug!("Skipping local database deletion for organization {} as table is removed.", organisation);
+    debug!(
+        "Skipping local database deletion for organization {} as table is removed.",
+        organisation
+    );
     warn!("The pre-configured Superposition organization (ID from env) is not affected by this Keycloak group deletion operation.");
     transaction.set_database_inserted(); // Signifies this phase is complete (no actual DB delete for org)
-
 
     // Step 3: Delete all applications associated with the organization (Concept might remain if apps are tied to Keycloak group)
     // This would involve finding all applications and deleting them

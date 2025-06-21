@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::middleware::auth::{AuthResponse, ROLES};
+use crate::middleware::auth::AuthResponse;
 use crate::types::AppState;
 use actix_web::{
     delete, error, get, post,
@@ -134,7 +134,6 @@ async fn delete_organisation(
         .cloned()
         .ok_or(error::ErrorUnauthorized("Token Parse Failed"))?;
     let admin_token = auth_response.admin_token.clone();
-    let sub = &auth_response.sub;
     let client = reqwest::Client::new();
     let admin = KeycloakAdmin::new(&state.env.keycloak_url.clone(), admin_token, client);
     let realm = state.env.realm.clone();
@@ -167,14 +166,8 @@ async fn delete_organisation(
         org.name == organisation && org.is_admin_or_higher()
     }) {
         // Delete the organization using the transaction manager
-        transaction::delete_organisation_with_transaction(
-            &organisation,
-            &admin,
-            &realm,
-            sub,
-            &state,
-        )
-        .await?;
+        transaction::delete_organisation_with_transaction(&organisation, &admin, &realm, &state)
+            .await?;
 
         Ok(Json(
             json!({"Success" : "Organisation deleted successfully"}),

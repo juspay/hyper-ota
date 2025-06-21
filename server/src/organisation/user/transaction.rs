@@ -12,15 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use actix_web::{error, web};
-use chrono::Utc;
+use actix_web::web;
 use keycloak::KeycloakAdmin;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
-    middleware::auth::AuthResponse,
     organisation::user::OrgError,
     types::AppState,
     utils::{
@@ -46,8 +43,7 @@ pub async fn add_user_with_transaction(
     org_context: &OrgContext,
     target_user: &UserContext,
     role_name: &str,
-    role_level: u8,
-    state: &web::Data<AppState>,
+    // state: &web::Data<AppState>,
 ) -> Result<(), OrgError> {
     // Create a new transaction manager for this operation
     let transaction = TransactionManager::new(&org_context.org_id, "organization_user");
@@ -116,7 +112,6 @@ pub async fn update_user_with_transaction(
     org_context: &OrgContext,
     target_user: &UserContext,
     new_role_name: &str,
-    new_access_level: u8,
     current_role: &str,
     state: &web::Data<AppState>,
 ) -> Result<(), OrgError> {

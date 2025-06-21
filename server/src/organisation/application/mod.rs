@@ -12,38 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
+use actix_web::error::HttpError;
 use actix_web::web::{Json, ReqData};
 use actix_web::{error, Scope};
 
 use actix_web::{post, web};
+use aws_smithy_types::Document;
 use keycloak::types::GroupRepresentation;
 use keycloak::KeycloakAdmin;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use superposition_rust_sdk::apis::configuration::Configuration;
-use superposition_rust_sdk::apis::default_api::{
-    create_default_config, create_workspace, CreateDefaultConfigError,
-};
-use superposition_rust_sdk::models::{
-    CreateDefaultConfigRequestContent, CreateDefaultConfigResponseContent,
-    CreateWorkspaceRequestContent, WorkspaceStatus,
-};
+use serde_json::json;
+use superposition_rust_sdk::operation::create_default_config::CreateDefaultConfigOutput;
+use superposition_rust_sdk::types::WorkspaceStatus;
+use superposition_rust_sdk::Client;
 
 use crate::middleware::auth::{validate_user, AuthResponse, WRITE};
 use crate::types::AppState;
 use diesel::RunQueryDsl;
 
+use crate::utils::db::models::{NewWorkspaceName, WorkspaceName};
+use crate::utils::db::schema::hyperotaserver::workspace_names;
 use crate::utils::keycloak::get_token;
 use crate::utils::transaction_manager::TransactionManager;
-use crate::utils::db::schema::hyperotaserver::workspace_names;
-use crate::utils::db::models::{NewWorkspaceName, WorkspaceName};
 
 mod config;
+mod dimension;
 mod package;
 mod release;
-mod dimension;
 
-use diesel::prelude::*;
 use diesel::ExpressionMethods;
 use diesel::QueryDsl;
 
@@ -93,64 +91,60 @@ struct ApplicationCreateRequest {
 }
 
 fn default_config<T: Clone>(
-    superposition_configuration: Configuration,
+    superposition_client: Client,
     workspace_name: String,
     superposition_org: String,
 ) -> impl AsyncFn(
     String,
     T,
     String,
-) -> actix_web::Result<
-    CreateDefaultConfigResponseContent,
-    superposition_rust_sdk::apis::Error<CreateDefaultConfigError>,
->
+) -> actix_web::Result<CreateDefaultConfigOutput>
 where
-    Value: From<T>,
+    Document: From<T>,
 {
     async move |key: String, value: T, description: String| {
-        create_default_config(
-            &superposition_configuration,
-            &superposition_org,
-            &workspace_name,
-            CreateDefaultConfigRequestContent {
-                key,
-                value: Some(Value::from(value.clone())),
-                schema: Some(get_scheme::<T>(value)),
-                description,
-                change_reason: "Initial value".to_string(),
-                ..Default::default()
-            },
-        )
-        .await
+        superposition_client
+            .create_default_config()
+            .org_id(superposition_org.clone())
+            .workspace_id(workspace_name.clone())
+            .key(key.clone())
+            .value(Document::from(value.clone()))
+            .description(description)
+            .change_reason("Initial value".to_string())
+            .schema(get_scheme(value.clone()))
+            .send()
+            .await.map_err(error::ErrorInternalServerError)
     }
 }
 
-fn get_scheme<T>(v: T) -> Value
+fn get_scheme<T>(v: T) -> Document
 where
-    Value: From<T>,
+    Document: From<T>,
 {
-    let v = Value::from(v);
-    Value::Object(match v {
+    let v = Document::from(v);
+    Document::Object(match v {
         // Don't use JSON macro. It is too heavy
         // Change this to Value::Object + Map
-        Value::String(_) => Map::from_iter([
-            (String::from("pattern"), Value::String(String::from(".*"))),
-            (String::from("type"), Value::String(String::from("string"))),
-        ]),
-        Value::Number(_) => {
-            Map::from_iter([(String::from("type"), Value::String(String::from("integer")))])
-        }
-        Value::Array(_) => Map::from_iter([
-            (String::from("type"), Value::String(String::from("array"))),
-            (
-                String::from("items"),
-                Value::Object(Map::from_iter([(
-                    String::from("type"),
-                    Value::String(String::from("string")),
-                )])),
-            ),
-        ]),
-        _ => Map::new(),
+        Document::String(_) => {
+            let mut map = HashMap::new();
+            map.insert("pattern".to_string(), Document::String(String::from(".*")));
+            map.insert("type".to_string(), Document::String(String::from("string")));
+            map
+        },
+        Document::Number(_) => {
+            let mut map = HashMap::new();
+            map.insert("type".to_string(), Document::String(String::from("integer")));
+            map
+        },
+        Document::Array(_) => {
+            let mut map = HashMap::new();
+            map.insert("type".to_string(), Document::String(String::from("array")));
+            let mut submap =  HashMap::new();
+            submap.insert("type".to_string(), Document::String(String::from("string")));
+            map.insert("items".to_string(), Document::Object(submap));
+            map
+        },  
+        _ => HashMap::new(),
     })
 }
 
@@ -181,10 +175,9 @@ async fn add_application(
     let transaction = TransactionManager::new(&application, "application_create");
 
     // Get DB connection
-    let mut conn = state.db_pool.get()
-        .map_err(|e| {
-            error::ErrorInternalServerError(format!("Failed to get database connection: {}", e))
-        })?;
+    let mut conn = state.db_pool.get().map_err(|e| {
+        error::ErrorInternalServerError(format!("Failed to get database connection: {}", e))
+    })?;
 
     // Get Keycloak Admin Token
     let client = reqwest::Client::new();
@@ -337,12 +330,17 @@ async fn add_application(
         };
 
         let superposition_org_id_from_env = state.env.superposition_org_id.clone();
-        println!("Using Superposition Org ID from environment: {}", superposition_org_id_from_env);
+        println!(
+            "Using Superposition Org ID from environment: {}",
+            superposition_org_id_from_env
+        );
         // Insert and get the inserted row (to get the id)
         let inserted_workspace: WorkspaceName = diesel::insert_into(workspace_names::table)
             .values(&new_workspace_name)
             .get_result(&mut conn)
-            .map_err(|e| error::ErrorInternalServerError(format!("Failed to store workspace name: {}", e)))?;
+            .map_err(|e| {
+                error::ErrorInternalServerError(format!("Failed to store workspace name: {}", e))
+            })?;
 
         let generated_id = inserted_workspace.id;
         let generated_workspace_name = format!("workspace{}", generated_id);
@@ -351,20 +349,20 @@ async fn add_application(
         diesel::update(workspace_names::table.filter(workspace_names::id.eq(generated_id)))
             .set(workspace_names::workspace_name.eq(&generated_workspace_name))
             .execute(&mut conn)
-            .map_err(|e| error::ErrorInternalServerError(format!("Failed to update workspace name: {}", e)))?;
+            .map_err(|e| {
+                error::ErrorInternalServerError(format!("Failed to update workspace name: {}", e))
+            })?;
 
         // Step 4: Create workspace in Superposition
-        let workspace = match create_workspace(
-            &state.superposition_configuration,
-            &superposition_org_id_from_env, // Use ID from env
-            CreateWorkspaceRequestContent {
-                workspace_admin_email: "pp-sdk@juspay.in".to_string(),
-                workspace_name: generated_workspace_name.clone(),
-                workspace_status: Some(WorkspaceStatus::Enabled),
-                workspace_strict_mode: false
-            },
-        )
-        .await
+
+        match state.superposition_client.create_workspace()
+            .org_id(superposition_org_id_from_env.clone())
+            .workspace_name(generated_workspace_name.clone())
+            .workspace_status(WorkspaceStatus::Enabled)
+            .workspace_strict_mode(false)
+            .workspace_admin_email("pp-sdk@juspay.in".to_string())
+            .send()
+            .await
         {
             Ok(workspace) => {
                 // Record Superposition resource using workspace name as the ID
@@ -390,12 +388,12 @@ async fn add_application(
 
         // Step 5: Create default configurations
         let create_default_config_string = default_config::<String>(
-            state.superposition_configuration.clone(),
+            state.superposition_client.clone(),
             generated_workspace_name.clone(),
             superposition_org_id_from_env.clone(), // Use ID from env
         );
         let create_default_config_int = default_config::<i32>(
-            state.superposition_configuration.clone(),
+            state.superposition_client.clone(),
             generated_workspace_name.clone(),
             superposition_org_id_from_env.clone(), // Use ID from env
         );
